@@ -1,3 +1,4 @@
+import CasePaths
 import Common
 import ComposableArchitecture
 import Inject
@@ -9,9 +10,9 @@ import SwiftUI
 // MARK: - LiveTranscriptionModelSelector
 
 @Reducer
-struct LiveTranscriptionModelSelector {
+struct LiveTranscriptionModelSelector: Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     @Shared(.availableModels) var availableModels: [ModelSelector.State.ModelInfo]
     @Shared(.premiumFeatures) var premiumFeatures: PremiumFeaturesStatus
     @Shared(.settings) var settings
@@ -25,18 +26,32 @@ struct LiveTranscriptionModelSelector {
     }
   }
 
-  enum Action: BindableAction, Equatable {
-    case binding(BindingAction<State>)
+  @CasePathable
+  enum Action: Equatable, Sendable {
     case purchaseLiveTranscriptionModal(PresentationAction<PurchaseLiveTranscriptionModal.Action>)
+    case setLiveTranscriptionEnabled(Bool)
+    case setSelectedModelName(Model.ID)
+    case setShowInfoPopup(Bool)
     case upgradeButtonTapped
   }
 
   var body: some ReducerOf<Self> {
-    BindingReducer()
-
-    Reduce { state, action in
+    Reduce<State, Action> { state, action in
       switch action {
-      case .binding:
+      case let .setLiveTranscriptionEnabled(isEnabled):
+        state.$settings.withLock {
+          $0.isLiveTranscriptionEnabled = isEnabled
+        }
+        return .none
+
+      case let .setSelectedModelName(modelID):
+        state.$settings.withLock {
+          $0.selectedModelName = modelID
+        }
+        return .none
+
+      case let .setShowInfoPopup(isPresented):
+        state.showInfoPopup = isPresented
         return .none
 
       case .purchaseLiveTranscriptionModal(.presented(.delegate(.didFinishTransaction))):
@@ -59,6 +74,7 @@ struct LiveTranscriptionModelSelector {
 
 // MARK: - LiveTranscriptionModelSelectorView
 
+@MainActor
 struct LiveTranscriptionModelSelectorView: View {
   @Perception.Bindable var store: StoreOf<LiveTranscriptionModelSelector>
 
@@ -66,6 +82,8 @@ struct LiveTranscriptionModelSelectorView: View {
 
   var body: some View {
     WithPerceptionTracking {
+      let showInfoPopup = store.showInfoPopup
+
       ZStack {
         if store.state.premiumFeatures.liveTranscriptionIsPurchased == nil {
           ProgressView()
@@ -73,7 +91,7 @@ struct LiveTranscriptionModelSelectorView: View {
           LockedFeatureView(
             title: "Live Transcription",
             description: "Real-time speech-to-text. Unlock now. Transform recording.",
-            onInfoTap: { store.send(.set(\.showInfoPopup, !store.state.showInfoPopup)) },
+            onInfoTap: { store.send(.setShowInfoPopup(true)) },
             onUpgradeTap: { store.send(.upgradeButtonTapped) }
           )
         } else {
@@ -92,25 +110,43 @@ struct LiveTranscriptionModelSelectorView: View {
 
               Spacer()
 
-              Button(action: { store.send(.set(\.showInfoPopup, true)) }) {
+              Button(action: { store.send(.setShowInfoPopup(true)) }) {
                 Image(systemName: "info.circle")
                   .textStyle(.bodyBold)
               }
             }
 
             VStack(alignment: .leading, spacing: .grid(2)) {
-              Toggle(isOn: $store.settings.isLiveTranscriptionEnabled) {
+              Toggle(
+                isOn: Binding(
+                  get: { store.settings.isLiveTranscriptionEnabled },
+                  set: { store.send(.setLiveTranscriptionEnabled($0)) }
+                )
+              ) {
                 Label("Enable Live Transcription", systemImage: "text.viewfinder")
                   .textStyle(.body)
               }
 
               LabeledContent {
-                Picker("", selection: $store.settings.selectedModelName) {
+                Picker(
+                  "",
+                  selection: Binding(
+                    get: { store.settings.selectedModelName },
+                    set: { store.send(.setSelectedModelName($0)) }
+                  )
+                ) {
                   ForEach(store.state.availableModels) { model in
-                    (Text(model.title).foregroundColor(.DS.Text.base) +
-                      Text("\(!model.isMultilingual || model.isDistilled ? " English" : "") (\(model.size))").foregroundColor(.DS.Text.subdued))
-                      .font(.DS.body)
-                      .tag(model.id)
+                    let languageLabel = !model.isMultilingual || model.isDistilled ? " English" : ""
+                    let detailLabel = "\(languageLabel) (\(model.size))"
+
+                    HStack(spacing: 0) {
+                      Text(model.title)
+                        .foregroundColor(.DS.Text.base)
+                      Text(detailLabel)
+                        .foregroundColor(.DS.Text.subdued)
+                    }
+                    .font(.DS.body)
+                    .tag(model.id)
                   }
                 }
                 .foregroundColor(.DS.Text.subdued)
@@ -159,7 +195,10 @@ struct LiveTranscriptionModelSelectorView: View {
         }
       }
       .popover(
-        present: $store.state.showInfoPopup,
+        present: Binding(
+          get: { showInfoPopup },
+          set: { store.send(.setShowInfoPopup($0)) }
+        ),
         attributes: {
           $0.position = .relative(
             popoverAnchors: [
@@ -188,6 +227,7 @@ struct LiveTranscriptionModelSelectorView: View {
 
 // MARK: - LockedFeatureView
 
+@MainActor
 struct LockedFeatureView: View {
   let title: String
   let description: String
@@ -247,7 +287,14 @@ struct LockedFeatureView: View {
     .conditionalEffect(.pushDown, condition: isPressed)
     .compositingGroup()
     .changeEffect(.shine.delay(1), value: shine, isEnabled: !shine)
-    .onAppear { _ = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in withAnimation { shine.toggle() } } }
+    .task {
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(3))
+        withAnimation {
+          shine.toggle()
+        }
+      }
+    }
   }
 }
 
@@ -280,6 +327,7 @@ extension View {
 
 // MARK: - InfoPopupView
 
+@MainActor
 struct InfoPopupView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
