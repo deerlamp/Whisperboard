@@ -13,6 +13,7 @@ extension AudioProcessor {
 
     let hardwareSampleRate = audioEngine.inputNode.inputFormat(forBus: 0).sampleRate
     let inputFormat = inputNode.outputFormat(forBus: 0)
+    let whisperSampleRate = 16000.0
 
     guard let nodeFormat = AVAudioFormat(
       commonFormat: inputFormat.commonFormat,
@@ -26,7 +27,7 @@ extension AudioProcessor {
     // Desired format (16,000 Hz, 1 channel)
     guard let desiredFormat = AVAudioFormat(
       commonFormat: .pcmFormatFloat32,
-      sampleRate: Double(WhisperKit.sampleRate),
+      sampleRate: whisperSampleRate,
       channels: AVAudioChannelCount(1),
       interleaved: false
     ) else {
@@ -43,7 +44,7 @@ extension AudioProcessor {
 
       let initialBuffer = buffer
       var buffer = buffer
-      if !buffer.format.sampleRate.isEqual(to: Double(WhisperKit.sampleRate)) {
+      if !buffer.format.sampleRate.isEqual(to: whisperSampleRate) {
         do {
           buffer = try Self.resampleBuffer(buffer, with: converter)
         } catch {

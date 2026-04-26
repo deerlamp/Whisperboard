@@ -1,18 +1,17 @@
 import Accelerate
 import AVFoundation
 import Common
-import ComposableArchitecture
 import CoreML
 import Dependencies
 import Foundation
-import WhisperKit
+@preconcurrency import WhisperKit
 
 // MARK: - TranscriptionStream
 
 public actor TranscriptionStream {
   public static let modelDirURL: URL = .documentsDirectory.appendingPathComponent("huggingface/models/argmaxinc/whisperkit-coreml")
 
-  public struct State {
+  public struct State: Sendable {
     public var currentFallbacks: Int = 0
     public var lastBufferSize: Int = 0
     public var lastConfirmedSegmentEndSeconds: Float = 0
@@ -58,13 +57,14 @@ public actor TranscriptionStream {
   public var state: TranscriptionStream.State = .init() {
     didSet {
       let copyState = state
-      DispatchQueue.main.async { [stateChangeCallback] in
+      let stateChangeCallback = stateChangeCallback
+      DispatchQueue.main.async {
         stateChangeCallback?(copyState)
       }
     }
   }
 
-  public var stateChangeCallback: ((State) -> Void)?
+  public var stateChangeCallback: (@Sendable (State) -> Void)?
 
   private var whisperKit: WhisperKit?
   private let audioProcessor: AudioProcessor
@@ -99,20 +99,16 @@ public actor TranscriptionStream {
 
     state.localModels = WhisperKit.formatModelFiles(state.localModels)
     logs.debug("Formatted local models: \(state.localModels)")
-    for model in state.localModels {
-      if !state.availableModels.contains(model) {
-        state.availableModels.append(model)
-        logs.debug("Added to available models: \(model)")
-      }
+    for model in state.localModels where !state.availableModels.contains(model) {
+      state.availableModels.append(model)
+      logs.debug("Added to available models: \(model)")
     }
 
     state.remoteModels = try await WhisperKit.fetchAvailableModels(from: state.repoName)
     logs.debug("Fetched remote models: \(state.remoteModels)")
-    for model in state.remoteModels {
-      if !state.availableModels.contains(model) {
-        state.availableModels.append(model)
-        logs.debug("Added remote model to available models: \(model)")
-      }
+    for model in state.remoteModels where !state.availableModels.contains(model) {
+      state.availableModels.append(model)
+      logs.debug("Added remote model to available models: \(model)")
     }
     logs.debug("Completed fetchModels")
   }
@@ -139,11 +135,7 @@ public actor TranscriptionStream {
     let folder: URL? = if state.localModels.contains(model) && !redownload {
       URL(fileURLWithPath: state.localModelPath).appendingPathComponent(model)
     } else {
-      try await WhisperKit.download(variant: model, from: state.repoName, progressCallback: { progress in
-        self.state.loadingProgressValue = Float(progress.fractionCompleted) * self.state.specializationProgressRatio
-        self.state.modelState = .downloading
-        logs.debug("Downloading model: \(model), progress: \(self.state.loadingProgressValue)")
-      })
+      try await downloadModel(model)
     }
 
     state.loadingProgressValue = state.specializationProgressRatio
@@ -211,6 +203,23 @@ public actor TranscriptionStream {
     logs.debug("Deleted model: \(model) at path: \(modelPath)")
   }
 
+  private func downloadModel(_ model: String) async throws -> URL {
+    let repoName = state.repoName
+    let progressCallback: @Sendable (Progress) -> Void = { [weak self] progress in
+      let fraction = progress.fractionCompleted
+      Task { [weak self] in
+        await self?.updateDownloadProgress(model: model, fractionCompleted: fraction)
+      }
+    }
+    return try await WhisperKit.download(variant: model, from: repoName, progressCallback: progressCallback)
+  }
+
+  private func updateDownloadProgress(model: String, fractionCompleted: Double) {
+    state.loadingProgressValue = Float(fractionCompleted) * state.specializationProgressRatio
+    state.modelState = .downloading
+    logs.debug("Downloading model: \(model), progress: \(state.loadingProgressValue)")
+  }
+
   private func updateProgressBar(targetProgress: Float, maxTime: TimeInterval) async {
     logs.debug("Starting updateProgressBar with targetProgress: \(targetProgress), maxTime: \(maxTime)")
     let initialProgress = state.loadingProgressValue
@@ -242,7 +251,7 @@ public actor TranscriptionStream {
     }
   }
 
-  public func startRealtimeLoop(callback: @escaping (State) -> Void) async throws {
+  public func startRealtimeLoop(callback: @escaping @Sendable (State) -> Void) async throws {
     logs.debug("Starting real-time loop")
     options = DecodingOptions(
       verbose: false,
@@ -284,7 +293,7 @@ public actor TranscriptionStream {
     state = .init()
   }
 
-  public func transcribeCurrentBuffer(callback: @escaping (State) -> Void) async throws {
+  public func transcribeCurrentBuffer(callback: @escaping @Sendable (State) -> Void) async throws {
     logs.debug("Starting transcription of current buffer")
     stateChangeCallback = callback
     state.isWorking = true
@@ -294,11 +303,12 @@ public actor TranscriptionStream {
 
     // Calculate the size and duration of the next buffer segment
     let nextBufferSize = currentBuffer.count - state.lastBufferSize
-    let nextBufferSeconds = Float(nextBufferSize) / Float(WhisperKit.sampleRate)
+    let nextBufferSeconds = Float(nextBufferSize) / 16000
 
     // Only run the transcribe if the next buffer has at least 1 second of audio
     guard nextBufferSeconds > 1 else {
-      return try await Task.sleep(nanoseconds: 100_000_000) // sleep for 100ms for next buffer
+      try await Task.sleep(nanoseconds: 100_000_000) // sleep for 100ms for next buffer
+      return // sleep for 100ms for next buffer
     }
 
     if state.useVAD {
@@ -349,7 +359,8 @@ public actor TranscriptionStream {
     logs.debug("Updated unconfirmed segments: \(state.unconfirmedSegments.count)")
   }
 
-  public func transcribeAudioFile(_ fileURL: URL, callback: @escaping (TranscriptionProgress, Double) -> Bool?) async throws -> TranscriptionResult {
+  public func transcribeAudioFile(_ fileURL: URL,
+                                  callback: @escaping @Sendable (TranscriptionProgress, Double) -> Bool?) async throws -> TranscriptionResult {
     guard let whisperKit else {
       logs.error("WhisperKit not initialized")
       throw NSError(domain: "WhisperKit not initialized", code: 1)
@@ -369,9 +380,17 @@ public actor TranscriptionStream {
       clipTimestamps: []
     )
 
-    let results: [TranscriptionResult] = try await whisperKit.transcribe(audioPath: fileURL.path(), decodeOptions: options) { progress in
+    // Captures the WhisperKit instance to read live progress; WhisperKit is not Sendable,
+    // so the callback can't be marked @Sendable without an actor wrapper around WhisperKit.
+    nonisolated(unsafe) let transcriptionCallback: (TranscriptionProgress) -> Bool? = { progress in
       callback(progress, whisperKit.progress.fractionCompleted)
     }
+
+    let results: [TranscriptionResult] = try await whisperKit.transcribe(
+      audioPath: fileURL.path(),
+      decodeOptions: options,
+      callback: transcriptionCallback
+    )
 
     return mergeTranscriptionResults(results)
   }

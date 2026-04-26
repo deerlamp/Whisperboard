@@ -2,7 +2,7 @@ import Common
 import ComposableArchitecture
 import Dependencies
 import Foundation
-import WhisperKit
+@preconcurrency import WhisperKit
 
 // MARK: - RecordingTranscriptionStream
 
@@ -10,16 +10,17 @@ import WhisperKit
 public struct RecordingTranscriptionStream: Sendable {
   public var startRecording: @Sendable (_ fileURL: URL) async -> AsyncThrowingStream<RecordingStream.State, Error> = { _ in .finished() }
   public var startLiveTranscription: @Sendable () async -> AsyncThrowingStream<TranscriptionStream.State, Error> = { .finished() }
-  public var transcribeAudioFile: @Sendable (URL, @escaping (TranscriptionProgress, Double) -> Bool?) async throws -> TranscriptionResult = { _, _ in
-    throw NSError(domain: "RecordingTranscriptionStream", code: 0, userInfo: nil)
-  }
+  public var transcribeAudioFile: @Sendable (URL, @escaping @Sendable (TranscriptionProgress, Double) -> Bool?) async throws
+    -> TranscriptionResult = { _, _ in
+      throw NSError(domain: "RecordingTranscriptionStream", code: 0, userInfo: nil)
+    }
 
   public var stopRecording: @Sendable () async -> Void = {}
   public var pauseRecording: @Sendable () async -> Void = {}
   public var resumeRecording: @Sendable () async -> Void = {}
 
   public var fetchModels: @Sendable () async throws -> [Model] = { [] }
-  public var loadModel: @Sendable (String, @escaping (Double) -> Void) async throws -> Void = { _, _ in }
+  public var loadModel: @Sendable (String, @escaping @Sendable (Double) -> Void) async throws -> Void = { _, _ in }
   public var deleteModel: @Sendable (String) async throws -> Void = { _ in }
   public var recommendedModels: @Sendable () -> (default: String, disabled: [String]) = { (default: "", disabled: []) }
   public var deleteAllModels: @Sendable () async throws -> Void = {}
@@ -28,7 +29,7 @@ public struct RecordingTranscriptionStream: Sendable {
 // MARK: DependencyKey
 
 extension RecordingTranscriptionStream: DependencyKey {
-  public static var liveValue: RecordingTranscriptionStream = {
+  public static let liveValue: RecordingTranscriptionStream = {
     let container = RecordingTranscriptionStreamContainer()
 
     return RecordingTranscriptionStream(
@@ -124,7 +125,8 @@ private actor RecordingTranscriptionStreamContainer {
     }
   }
 
-  func transcribeAudioFile(_ fileURL: URL, callback: @escaping (TranscriptionProgress, Double) -> Bool?) async throws -> TranscriptionResult {
+  func transcribeAudioFile(_ fileURL: URL,
+                           callback: @escaping @Sendable (TranscriptionProgress, Double) -> Bool?) async throws -> TranscriptionResult {
     try await transcriptionStream.transcribeAudioFile(fileURL, callback: callback)
   }
 
@@ -146,7 +148,7 @@ private actor RecordingTranscriptionStreamContainer {
     return await getModelInfos()
   }
 
-  func loadModel(_ model: String, progressCallback: @escaping (Double) -> Void) async throws {
+  func loadModel(_ model: String, progressCallback: @escaping @Sendable (Double) -> Void) async throws {
     logs.debug("Starting to load model: \(model)")
     async let loadModelTask: Void = transcriptionStream.loadModel(model)
 

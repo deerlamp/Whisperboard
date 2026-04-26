@@ -1,5 +1,6 @@
 import AVFoundation
 import Common
+import ComposableArchitecture
 import Dependencies
 import Foundation
 import WhisperKit
@@ -55,8 +56,10 @@ public actor RecordingStream {
     defer { try? audioSession.enable(.record, false) }
 
     let converter = try audioProcessor.startFileRecording { [weak self] buffer, _ in
-      Task { [weak self] in
-        await self?.onAudioBufferCallback(buffer)
+      guard let buffer = Self.copyBuffer(buffer) else { return }
+      let sendableBuffer = UncheckedSendable(buffer)
+      Task { [weak self, sendableBuffer] in
+        await self?.onAudioBufferCallback(sendableBuffer.value)
       }
     }
 
@@ -117,5 +120,29 @@ public actor RecordingStream {
     } catch {
       logs.error("Failed to write audio buffer to file: \(error.localizedDescription)")
     }
+  }
+
+  private nonisolated static func copyBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
+      return nil
+    }
+
+    copy.frameLength = buffer.frameLength
+
+    let bufferCount = Int(buffer.audioBufferList.pointee.mNumberBuffers)
+    withUnsafePointer(to: buffer.audioBufferList.pointee.mBuffers) { sourcePointer in
+      withUnsafeMutablePointer(to: &copy.mutableAudioBufferList.pointee.mBuffers) { destinationPointer in
+        for index in 0 ..< bufferCount {
+          let source = sourcePointer[index]
+          destinationPointer[index].mDataByteSize = source.mDataByteSize
+          guard let sourceData = source.mData, let destinationData = destinationPointer[index].mData else {
+            continue
+          }
+          memcpy(destinationData, sourceData, Int(source.mDataByteSize))
+        }
+      }
+    }
+
+    return copy
   }
 }
