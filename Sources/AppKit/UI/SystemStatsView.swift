@@ -1,5 +1,3 @@
-// Taken from https://github.com/argmaxinc/swift-system-stats/blob/main/SystemStats/StatisticsView.swift
-
 import Charts
 import Combine
 import MachO
@@ -276,12 +274,16 @@ struct StatisticsView: View {
     switch fromCategory {
     case "Free":
       colorForCategory = .green
+
     case "Compressed":
       colorForCategory = .red
+
     case "Inactive":
       colorForCategory = .purple
+
     case "Wired":
       colorForCategory = .blue
+
     case "Active":
       colorForCategory = .teal
 
@@ -338,16 +340,22 @@ struct StatisticsView: View {
     switch UIDevice.current.userInterfaceIdiom {
     case .unspecified:
       deviceType = "Unspecified"
+
     case .phone:
       deviceType = "iPhone" // iPhone and iPod touch style UI
+
     case .pad:
       deviceType = "iPad" // iPad style UI
+
     case .tv:
       deviceType = "Apple TV" // Apple TV style UI
+
     case .carPlay:
       deviceType = "CarPlay" // CarPlay style UI
+
     case .mac:
       deviceType = "Mac" // Optimized for Mac UI (e.g., Mac Catalyst)
+
     default:
       deviceType = "Vision"
     }
@@ -357,12 +365,16 @@ struct StatisticsView: View {
     switch state {
     case .unplugged:
       return "Unplugged"
+
     case .charging:
       return "Charging"
+
     case .full:
       return "Full"
+
     case .unknown:
       return "Unknown"
+
     @unknown default:
       return "Not Available"
     }
@@ -442,7 +454,7 @@ struct StatisticsView: View {
     }
 
     if result == KERN_SUCCESS {
-      let pageSize = vm_kernel_page_size
+      let pageSize = vm_size_t(getpagesize())
 
       // Calculate the basic memory statistics
       let free = UInt64(host_info.free_count) * UInt64(pageSize)
@@ -514,12 +526,16 @@ struct StatisticsView: View {
     switch thermalStatus {
     case .nominal:
       thermalState = "Nominal"
+
     case .fair:
       thermalState = "Fair"
+
     case .serious:
       thermalState = "Serious"
+
     case .critical:
       thermalState = "Critical"
+
     default:
       thermalState = "Unknown"
     }

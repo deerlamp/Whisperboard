@@ -45,38 +45,38 @@ extension Color {
     static let code05 = Color(hexString: "1C7ED6")
 
     enum Background {
-      static var primary = Color.DS.neutral07100
-      static var secondary = Color.DS.neutral06100
-      static var tertiary = Color.DS.neutral0550
-      static var accent = Color.DS.primary01100
-      static var accentAlt = Color.DS.primary02
-      static var error = Color.DS.primary01100
-      static var success = Color.DS.accents03
-      static var warning = Color.DS.accents05
+      static let primary = Color.DS.neutral07100
+      static let secondary = Color.DS.neutral06100
+      static let tertiary = Color.DS.neutral0550
+      static let accent = Color.DS.primary01100
+      static let accentAlt = Color.DS.primary02
+      static let error = Color.DS.primary01100
+      static let success = Color.DS.accents03
+      static let warning = Color.DS.accents05
     }
 
     enum Text {
-      static var base = Color.DS.neutral01100
-      static var subdued = Color.DS.neutral04100
-      static var accent = Color.DS.primary01100
-      static var accentAlt = Color.DS.primary02
-      static var error = Color.DS.primary01100
-      static var success = Color.DS.accents03
-      static var warning = Color.DS.accents05
-      static var link = Color.DS.accents01
-      static var overAccent = Color.DS.neutral01100
+      static let base = Color.DS.neutral01100
+      static let subdued = Color.DS.neutral04100
+      static let accent = Color.DS.primary01100
+      static let accentAlt = Color.DS.primary02
+      static let error = Color.DS.primary01100
+      static let success = Color.DS.accents03
+      static let warning = Color.DS.accents05
+      static let link = Color.DS.accents01
+      static let overAccent = Color.DS.neutral01100
     }
 
     enum Stroke {
-      static var base = Color.DS.neutral04100
-      static var subdued = Color.DS.neutral04100
-      static var accent = Color.DS.primary01100
+      static let base = Color.DS.neutral04100
+      static let subdued = Color.DS.neutral04100
+      static let accent = Color.DS.primary01100
     }
 
     enum Shadow {
-      static var primary = Color.DS.neutral07100
-      static var secondary = Color.DS.neutral06100
-      static var accent = Color.DS.primary01100
+      static let primary = Color.DS.neutral07100
+      static let secondary = Color.DS.neutral06100
+      static let accent = Color.DS.primary01100
     }
   }
 }

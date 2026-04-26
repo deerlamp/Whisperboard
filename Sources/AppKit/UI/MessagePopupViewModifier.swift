@@ -3,31 +3,6 @@ import Foundation
 import Popovers
 import SwiftUI
 
-extension View {
-  func messagePopup<ButtonAction>(
-    store: Store<PresentationState<AlertState<ButtonAction>>, PresentationAction<ButtonAction>>
-  ) -> some View {
-    messagePopup(store: store, state: { $0 }, action: { $0 })
-  }
-
-  func messagePopup<State, Action, ButtonAction>(
-    store: Store<PresentationState<State>, PresentationAction<Action>>,
-    state toDestinationState: @escaping (State) -> AlertState<ButtonAction>?,
-    action fromDestinationAction: @escaping (ButtonAction) -> Action
-  ) -> some View {
-    presentation(store: store, state: toDestinationState, action: fromDestinationAction) { `self`, $isPresented, _ in
-      let alertState = store.withState { $0.wrappedValue.flatMap(toDestinationState) }
-      self.modifier(
-        MessagePopupViewModifier(
-          isPresented: $isPresented,
-          alertState: alertState,
-          sendAction: { _ = store.send(.presented(fromDestinationAction($0))) }
-        )
-      )
-    }
-  }
-}
-
 // MARK: - MessagePopupViewModifier
 
 struct MessagePopupViewModifier<ButtonAction>: ViewModifier {

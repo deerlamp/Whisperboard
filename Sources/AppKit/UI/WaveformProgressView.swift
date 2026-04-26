@@ -1,3 +1,4 @@
+import CasePaths
 import Common
 import ComposableArchitecture
 import DSWaveformImage
@@ -40,22 +41,27 @@ struct WaveformProgress {
       self.audioFileURL = audioFileURL
       self.waveformImageURL = waveformImageURL
       self.duration = duration
-      _waveformImage = Shared(nil)
+      _waveformImage = Shared(value: nil)
     }
   }
 
-  enum Action: Equatable, BindableAction {
-    case binding(BindingAction<State>)
+  @CasePathable
+  enum Action: Equatable {
+    case setProgress(Double)
+    case setIsSeeking(Bool)
     case onTask
     case waveformImageCreated(UIImage?)
   }
 
   var body: some Reducer<State, Action> {
-    BindingReducer()
-
     Reduce<State, Action> { state, action in
       switch action {
-      case .binding:
+      case let .setProgress(progress):
+        state.progress = progress
+        return .none
+
+      case let .setIsSeeking(isSeeking):
+        state.isSeeking = isSeeking
         return .none
 
       case .onTask:
@@ -86,7 +92,7 @@ struct WaveformProgress {
 
       case let .waveformImageCreated(image):
         state.isImageCreated = true
-        state.waveformImage = image
+        state.$waveformImage.withLock { $0 = image }
         return .none
       }
     }
@@ -120,13 +126,13 @@ struct WaveformProgressView: View {
                 let progress = Double(value.location.x / imageSize.width)
                 let clampedProgress = min(max(0, progress), 1.0)
                 if shouldSendProgressUpdate(newProgress: clampedProgress) {
-                  $store.progress.wrappedValue = clampedProgress
-                  $store.isSeeking.wrappedValue = true
+                  store.send(.setProgress(clampedProgress))
+                  store.send(.setIsSeeking(true))
                   lastSentProgress = clampedProgress
                 }
               }
               .onEnded { _ in
-                $store.isSeeking.wrappedValue = false
+                store.send(.setIsSeeking(false))
               }
           )
           .frame(maxWidth: .infinity)
@@ -147,7 +153,6 @@ struct WaveformProgressView: View {
     return abs(newProgress - lastProgress) > 0.01 // Only send updates if the change is greater than 1%
   }
 
-  @ViewBuilder
   private func waveImageView() -> some View {
     GeometryReader { geometry in
       WithPerceptionTracking {

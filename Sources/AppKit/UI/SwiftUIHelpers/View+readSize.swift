@@ -61,7 +61,7 @@ extension View {
 // MARK: - FramePreferenceKey
 
 private struct FramePreferenceKey: PreferenceKey {
-  static var defaultValue: CGRect = .zero
+  static let defaultValue: CGRect = .zero
 
   static func reduce(value _: inout CGRect, nextValue _: () -> CGRect) {}
 }
@@ -69,7 +69,7 @@ private struct FramePreferenceKey: PreferenceKey {
 // MARK: - SizePreferenceKey
 
 private struct SizePreferenceKey: PreferenceKey {
-  static var defaultValue: CGSize = .zero
+  static let defaultValue: CGSize = .zero
 
   static func reduce(value _: inout CGSize, nextValue _: () -> CGSize) {}
 }
@@ -77,7 +77,7 @@ private struct SizePreferenceKey: PreferenceKey {
 // MARK: - PositionPreferenceKey
 
 private struct PositionPreferenceKey: PreferenceKey {
-  static var defaultValue: CGPoint = .zero
+  static let defaultValue: CGPoint = .zero
 
   static func reduce(value _: inout CGPoint, nextValue _: () -> CGPoint) {}
 }
@@ -85,7 +85,7 @@ private struct PositionPreferenceKey: PreferenceKey {
 // MARK: - SafeAreaPreferenceKey
 
 private struct SafeAreaPreferenceKey: PreferenceKey {
-  static var defaultValue: EdgeInsets = .init()
+  static let defaultValue: EdgeInsets = .init()
 
   static func reduce(value _: inout EdgeInsets, nextValue _: () -> EdgeInsets) {}
 }
