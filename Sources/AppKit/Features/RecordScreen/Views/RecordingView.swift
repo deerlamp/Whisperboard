@@ -1,4 +1,5 @@
 import AudioProcessing
+import CasePaths
 import Common
 import ComposableArchitecture
 import Dependencies
@@ -13,9 +14,9 @@ import WhisperKit
 // MARK: - Recording
 
 @Reducer
-struct Recording {
+struct Recording: Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     enum Mode: Equatable {
       case recording, saving, paused, removing
     }
@@ -40,14 +41,15 @@ struct Recording {
     var isLiveTranscriptionEnabled: Bool
 
     init(recordingInfo: RecordingInfo, isLiveTranscriptionEnabled: Bool) {
-      _recordingInfo = Shared(recordingInfo)
-      _samples = Shared([])
-      _liveTranscriptionState = Shared(nil)
+      _recordingInfo = Shared(value: recordingInfo)
+      _samples = Shared(value: [])
+      _liveTranscriptionState = Shared(value: nil)
       self.isLiveTranscriptionEnabled = isLiveTranscriptionEnabled
     }
   }
 
-  enum Action: Equatable, BindableAction {
+  @CasePathable
+  enum Action: Equatable, BindableAction, Sendable {
     case binding(BindingAction<State>)
     case delegate(Delegate)
     case onTask
@@ -68,7 +70,7 @@ struct Recording {
   var body: some ReducerOf<Self> {
     BindingReducer()
 
-    Reduce { state, action in
+    Reduce<State, Action> { state, action in
       switch action {
       case .binding:
         return .none
@@ -84,7 +86,7 @@ struct Recording {
           recordingInfo = state.$recordingInfo,
           isLiveTranscriptionEnabled = state.isLiveTranscriptionEnabled
         ] _ in
-          generateImpact()
+          await generateImpact()
 
           @Shared(.settings) var settings: Settings
 
@@ -150,7 +152,7 @@ struct Recording {
         state.mode = .saving
 
         return .run { [state] send in
-          generateImpact()
+          await generateImpact()
           await transcriptionStream.stopRecording()
           await send(.delegate(.didFinish(.success(state))))
         }
@@ -159,7 +161,7 @@ struct Recording {
         state.mode = .paused
 
         return .run { _ in
-          generateImpact()
+          await generateImpact()
           await transcriptionStream.pauseRecording()
         }
 
@@ -167,7 +169,7 @@ struct Recording {
         state.mode = .recording
 
         return .run { _ in
-          generateImpact()
+          await generateImpact()
           await transcriptionStream.resumeRecording()
         }
 
@@ -175,7 +177,7 @@ struct Recording {
         state.mode = .removing
 
         return .run { [state] send in
-          generateImpact()
+          await generateImpact()
           await transcriptionStream.stopRecording()
           try? FileManager.default.removeItem(at: state.recordingInfo.fileURL)
           await send(.delegate(.didCancel))
@@ -188,6 +190,7 @@ struct Recording {
     }
   }
 
+  @MainActor
   func generateImpact() {
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
   }
@@ -223,6 +226,7 @@ extension TranscriptionSegment {
 // MARK: - RecordingView
 
 /// A view that displays the recording waveform and current time.
+@MainActor
 struct RecordingView: View {
   @Perception.Bindable var store: StoreOf<Recording>
 
@@ -261,7 +265,6 @@ struct RecordingView: View {
   /// A view that displays live transcription of the recording.
   ///
   /// - Parameter recording: The current recording state.
-  @ViewBuilder
   private func liveTranscriptionView() -> some View {
     VStack(spacing: .grid(2)) {
       if let progress = store.liveTranscriptionState?.modelProgress {
@@ -276,7 +279,6 @@ struct RecordingView: View {
   /// A view that displays the model loading progress.
   ///
   /// - Parameter progress: The current progress of the model loading.
-  @ViewBuilder
   private func modelLoadingView(progress: Double) -> some View {
     LabeledContent {
       Text("\(Int(progress * 100)) %")
@@ -320,7 +322,6 @@ struct RecordingView: View {
   /// - Parameters:
   ///   - recording: The current recording state.
   ///   - text: The transcribed text.
-  @ViewBuilder
   private func transcribingView(recording: Recording.State) -> some View {
     ScrollView(showsIndicators: false) {
       Text(recording.recordingInfo.text)

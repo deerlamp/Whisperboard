@@ -1,20 +1,21 @@
 import AsyncAlgorithms
 import AudioProcessing
-import BackgroundTasks
+@preconcurrency import BackgroundTasks
+import CasePaths
 import Combine
 import Common
 import ComposableArchitecture
 import Dependencies
 import IdentifiedCollections
 import UIKit
-import WhisperKit
+@preconcurrency import WhisperKit
 
 // MARK: - TranscriptionWorkerClient
 
 @Reducer
-struct TranscriptionWorker: Reducer {
+struct TranscriptionWorker: Reducer, Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     @Shared(.transcriptionTasks) var taskQueue: IdentifiedArrayOf<TranscriptionTask>
     @Shared(.recordings) var recordings: IdentifiedArrayOf<RecordingInfo>
     fileprivate var backgroundTask: UIBackgroundTaskIdentifier = .invalid
@@ -26,9 +27,10 @@ struct TranscriptionWorker: Reducer {
     var currentTask: TranscriptionTask?
   }
 
-  enum Action {
+  @CasePathable
+  enum Action: Sendable {
     case processTasks
-    case handleBGProcessingTask(BGProcessingTask)
+    case handleBGProcessingTask(BGProcessingTaskWrapper)
     case beginBackgroundTask
     case endBackgroundTask
     case scheduleBackgroundProcessingTask
@@ -39,8 +41,14 @@ struct TranscriptionWorker: Reducer {
     case resumeTask(TranscriptionTask)
     case setCurrentTask(TranscriptionTask)
     case currentTaskFinishProcessing
-    case setBackgroundTask(UIBackgroundTaskIdentifier) // Added this case
+    case setBackgroundTask(UIBackgroundTaskIdentifier)
     case transcriptionDidUpdate(Transcription, task: TranscriptionTask)
+  }
+
+  // BGProcessingTask is a non-Sendable class, but BGTaskScheduler delivers it
+  // on a single queue and we only mutate it inside that delivery path.
+  struct BGProcessingTaskWrapper: @unchecked Sendable {
+    let task: BGProcessingTask
   }
 
   static let backgroundTaskIdentifier = "me.igortarasenko.Whisperboard"
@@ -50,12 +58,12 @@ struct TranscriptionWorker: Reducer {
   @Dependency(RecordingTranscriptionStream.self) var transcriptionStream: RecordingTranscriptionStream
 
   var body: some Reducer<State, Action> {
-    Reduce { state, action in
+    Reduce<State, Action> { state, action in
       switch action {
       case .processTasks:
         guard !state.isProcessing else { return .none }
 
-        if let (task, recording) = getNextTask(state: state) {
+        if let (task, recording) = getNextTask(state: &state) {
           return .run { send in
             await send(.setCurrentTask(task))
             await send(.beginBackgroundTask)
@@ -72,9 +80,11 @@ struct TranscriptionWorker: Reducer {
           return .none
         }
 
-      case let .handleBGProcessingTask(bgTask):
+      case let .handleBGProcessingTask(wrapper):
         return .run { send in
-          bgTask.expirationHandler = {}
+          wrapper.task.expirationHandler = { [task = wrapper.task] in
+            task.setTaskCompleted(success: false)
+          }
           await send(.processTasks)
         }
 
@@ -82,7 +92,7 @@ struct TranscriptionWorker: Reducer {
         guard state.isProcessing else { return .none }
         return .run { send in
           let taskIdentifier = await UIApplication.shared.beginBackgroundTask {
-            Task { await send(.endBackgroundTask) }
+            Task { send(.endBackgroundTask) }
           }
           await send(.setBackgroundTask(taskIdentifier))
         }
@@ -91,11 +101,14 @@ struct TranscriptionWorker: Reducer {
         return .send(.setBackgroundTask(.invalid))
 
       case let .setBackgroundTask(taskIdentifier):
-        if state.backgroundTask != .invalid {
-          UIApplication.shared.endBackgroundTask(state.backgroundTask)
-        }
+        let previousTask = state.backgroundTask
         state.backgroundTask = taskIdentifier
-        return .none
+        guard previousTask != .invalid else { return .none }
+        return .run { _ in
+          await MainActor.run {
+            UIApplication.shared.endBackgroundTask(previousTask)
+          }
+        }
 
       case .scheduleBackgroundProcessingTask:
         guard state.isProcessing else { return .none }
@@ -116,9 +129,11 @@ struct TranscriptionWorker: Reducer {
         return .none
 
       case let .enqueueTaskForRecordingID(id, settings):
-        state.taskQueue.removeAll(where: { $0.recordingInfoID == id })
         let task = TranscriptionTask(recordingInfoID: id, settings: settings)
-        state.taskQueue.append(task)
+        state.$taskQueue.withLock {
+          $0.removeAll(where: { $0.recordingInfoID == id })
+          $0.append(task)
+        }
         return .send(.processTasks)
 
       case let .cancelTaskForRecordingID(id):
@@ -127,16 +142,22 @@ struct TranscriptionWorker: Reducer {
         }
 
         let isCurrent = state.currentTask?.id == task?.id && task != nil
-        state.taskQueue.removeAll { $0.recordingInfoID == id }
+        state.$taskQueue.withLock {
+          $0.removeAll { $0.recordingInfoID == id }
+        }
 
         return isCurrent ? .cancel(id: CancelID.processing) : .none
 
       case .cancelAllTasks:
-        state.taskQueue.removeAll()
+        state.$taskQueue.withLock {
+          $0.removeAll()
+        }
         return .cancel(id: CancelID.processing)
 
       case let .resumeTask(task):
-        state.taskQueue.insert(task, at: 0)
+        _ = state.$taskQueue.withLock {
+          $0.insert(task, at: 0)
+        }
         return .send(.processTasks)
 
       case let .setCurrentTask(task):
@@ -145,7 +166,9 @@ struct TranscriptionWorker: Reducer {
 
       case .currentTaskFinishProcessing:
         if let currentTask = state.currentTask {
-          state.taskQueue.removeAll { $0.id == currentTask.id }
+          state.$taskQueue.withLock {
+            $0.removeAll { $0.id == currentTask.id }
+          }
         }
         state.currentTask = nil
         return .run { send in
@@ -154,24 +177,28 @@ struct TranscriptionWorker: Reducer {
 
       case let .transcriptionDidUpdate(transcription, task: task):
         if let recordingIndex = state.recordings.firstIndex(where: { $0.id == task.recordingInfoID }) {
-          state.recordings[recordingIndex].transcription = transcription
+          state.$recordings.withLock {
+            $0[recordingIndex].transcription = transcription
+          }
         }
         return .none
       }
     }
   }
 
-  private func getNextTask(state: State) -> (task: TranscriptionTask, recording: RecordingInfo)? {
+  private func getNextTask(state: inout State) -> (task: TranscriptionTask, recording: RecordingInfo)? {
     while let task = state.taskQueue.first {
       if let recording = state.recordings.first(where: { $0.id == task.recordingInfoID }) {
         return (task: task, recording: recording)
       }
-      state.taskQueue.removeFirst()
+      _ = state.$taskQueue.withLock {
+        $0.removeFirst()
+      }
     }
     return nil
   }
 
-  func process(task: TranscriptionTask, recording: RecordingInfo, callback: @escaping (Transcription) async -> Void) async {
+  func process(task: TranscriptionTask, recording: RecordingInfo, callback: @escaping @Sendable (Transcription) async -> Void) async {
     logs.debug("Starting transcription process for task ID: \(task.id)")
     defer {
       logs.debug("Ending transcription process for task ID: \(task.id)")
@@ -186,7 +213,7 @@ struct TranscriptionWorker: Reducer {
       model: model
     ))
 
-    let updateClosure: ((inout Transcription) -> Void) -> Void = { update in
+    let updateClosure: @Sendable (@Sendable (inout Transcription) -> Void) -> Void = { update in
       transcription.withValue { transcription in
         update(&transcription)
       }

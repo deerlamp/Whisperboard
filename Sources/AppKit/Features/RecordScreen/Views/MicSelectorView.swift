@@ -1,5 +1,6 @@
 import AudioProcessing
 import AVFoundation
+import CasePaths
 import Common
 import ComposableArchitecture
 import Inject
@@ -19,6 +20,7 @@ struct MicSelector {
     @Presents var alert: AlertState<Action.Alert>?
   }
 
+  @CasePathable
   enum Action: Equatable, BindableAction {
     case binding(BindingAction<State>)
     case task
@@ -93,6 +95,7 @@ struct MicSelector {
 
 // MARK: - MicSelectorView
 
+@MainActor
 struct MicSelectorView: View {
   @Perception.Bindable var store: StoreOf<MicSelector>
 
@@ -109,7 +112,7 @@ struct MicSelectorView: View {
                   .hidden(!isSelected)
 
                 VStack(alignment: .leading, spacing: 0) {
-                  Text(mic.port.portName)
+                  Text(mic.portName)
                     .textStyle(.body)
                 }
               }

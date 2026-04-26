@@ -1,4 +1,5 @@
 import AudioProcessing
+import CasePaths
 import Common
 import ComposableArchitecture
 import Inject
@@ -17,8 +18,8 @@ struct RecordScreen {
     var liveTranscriptionSelector = LiveTranscriptionModelSelector.State()
   }
 
-  enum Action: Equatable, BindableAction {
-    case binding(BindingAction<State>)
+  @CasePathable
+  enum Action: Equatable {
     case micSelector(MicSelector.Action)
     case recordingControls(RecordingControls.Action)
     case alert(PresentationAction<Alert>)
@@ -33,17 +34,15 @@ struct RecordScreen {
   }
 
   var body: some Reducer<State, Action> {
-    BindingReducer()
-
-    Scope(state: \.micSelector, action: /Action.micSelector) {
+    Scope(state: \.micSelector, action: \.micSelector) {
       MicSelector()
     }
 
-    Scope(state: \.recordingControls, action: /Action.recordingControls) {
+    Scope(state: \.recordingControls, action: \.recordingControls) {
       RecordingControls()
     }
 
-    Scope(state: \.liveTranscriptionSelector, action: /Action.liveTranscriptionSelector) {
+    Scope(state: \.liveTranscriptionSelector, action: \.liveTranscriptionSelector) {
       LiveTranscriptionModelSelector()
     }
 
@@ -58,8 +57,8 @@ struct RecordScreen {
 
       case let .recordingControls(.recording(.delegate(.didFinish(.failure(error))))):
         state.alert = AlertState(
-          title: TextState("Voice recording failed."),
-          message: TextState(error.localizedDescription)
+          title: { TextState("Voice recording failed.") },
+          message: { TextState(error.localizedDescription) }
         )
         return .none
 
@@ -70,9 +69,6 @@ struct RecordScreen {
         return .none
 
       case .delegate:
-        return .none
-
-      case .binding:
         return .none
 
       case .alert:
@@ -88,26 +84,35 @@ struct RecordScreen {
 
 // MARK: - RecordScreenView
 
+@MainActor
 struct RecordScreenView: View {
   @Perception.Bindable var store: StoreOf<RecordScreen>
 
   var body: some View {
     WithPerceptionTracking {
       VStack(spacing: .grid(6)) {
-        MicSelectorView(store: store.scope(state: \.micSelector, action: \.micSelector))
+        MicSelectorView(
+          store: store.scope(state: \.micSelector, action: \.micSelector)
+        )
 
         if store.state.recordingControls.recording == nil, store.state.liveTranscriptionSelector.premiumFeatures.isProductFound == true {
-          LiveTranscriptionModelSelectorView(store: store.scope(state: \.liveTranscriptionSelector, action: \.liveTranscriptionSelector))
-            .transition(.movingParts.blur.combined(with: .opacity))
+          LiveTranscriptionModelSelectorView(
+            store: store.scope(state: \.liveTranscriptionSelector, action: \.liveTranscriptionSelector)
+          )
+          .transition(.movingParts.blur.combined(with: .opacity))
         }
 
         Spacer()
 
-        RecordingControlsView(store: store.scope(state: \.recordingControls, action: \.recordingControls))
+        RecordingControlsView(
+          store: store.scope(state: \.recordingControls, action: \.recordingControls)
+        )
       }
       .padding(.grid(4))
       .padding(.horizontal, .grid(2))
-      .alert($store.scope(state: \.alert, action: \.alert))
+      .alert(
+        $store.scope(state: \.alert, action: \.alert)
+      )
     }
   }
 }

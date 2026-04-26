@@ -1,4 +1,5 @@
 import AudioProcessing
+import CasePaths
 import Common
 import ComposableArchitecture
 import DSWaveformImage
@@ -10,7 +11,7 @@ import SwiftUI
 
 // MARK: - RecordingControls
 
-/// A reducer that manages the state and actions related to recording controls.
+/// A reducer that manages the state and actions of the recording controls.
 @Reducer
 struct RecordingControls {
   /// The state of the recording controls.
@@ -29,11 +30,14 @@ struct RecordingControls {
   }
 
   /// Actions that can be performed on the recording controls.
+  @CasePathable
   enum Action: Equatable, BindableAction {
     case binding(BindingAction<State>)
     case recording(Recording.Action)
     case recordButtonTapped
     case openSettingsButtonTapped
+    case setAudioRecorderPermission(State.RecorderPermission)
+    case setRecording(Recording.State?)
   }
 
   @Dependency(\.audioSession.requestRecordPermission) var requestRecordPermission
@@ -51,12 +55,20 @@ struct RecordingControls {
 
     Reduce<State, Action> { state, action in
       switch action {
+      case let .setAudioRecorderPermission(permission):
+        state.audioRecorderPermission = permission
+        return .none
+
+      case let .setRecording(recording):
+        state.recording = recording
+        return .none
+
       case .recordButtonTapped where state.audioRecorderPermission == .undetermined:
         return .run { send in
           let permission = await requestRecordPermission()
-          await send(.set(\.audioRecorderPermission, permission ? .allowed : .denied))
+          await send(.setAudioRecorderPermission(permission ? .allowed : .denied))
           if permission {
-            await send(.set(\.recording, createNewRecording()))
+            await send(.setRecording(createNewRecording()))
           }
         }
 
@@ -108,10 +120,16 @@ struct RecordingControls {
   /// An alert state for microphone permission denial.
   private var micPermissionAlert: AlertState<Action> {
     AlertState(
-      title: TextState("Permission is required to record voice."),
-      message: TextState("Please enable microphone access in Settings."),
-      primaryButton: .default(TextState("Open Settings"), action: .send(.openSettingsButtonTapped)),
-      secondaryButton: .cancel(TextState("Cancel"))
+      title: { TextState("Permission is required to record voice.") },
+      actions: {
+        ButtonState(action: .openSettingsButtonTapped) {
+          TextState("Open Settings")
+        }
+        ButtonState(role: .cancel) {
+          TextState("Cancel")
+        }
+      },
+      message: { TextState("Please enable microphone access in Settings.") }
     )
   }
 }
@@ -119,6 +137,7 @@ struct RecordingControls {
 // MARK: - RecordingControlsView
 
 /// A view that provides controls for recording audio.
+@MainActor
 struct RecordingControlsView: View {
   @Perception.Bindable var store: StoreOf<RecordingControls>
 
