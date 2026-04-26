@@ -1,4 +1,3 @@
-@testable import AppKit
 import AudioProcessing
 import Common
 import WhisperKit

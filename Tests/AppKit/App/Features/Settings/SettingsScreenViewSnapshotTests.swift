@@ -26,7 +26,6 @@ class SettingsScreenViewSnapshotTests: XCTestCase {
     let view = SettingsScreenView(store: store)
       .background(Color.DS.Background.primary)
       .environment(\.colorScheme, .dark)
-      .environment(TabBarViewModel())
 
     assertSnapshots(
       matching: view,
