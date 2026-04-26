@@ -2,22 +2,23 @@ import AVFoundation
 
 // MARK: - Microphone
 
-public struct Microphone: Hashable, Equatable, Identifiable {
+public struct Microphone: Hashable, Equatable, Identifiable, Sendable {
+  public let id: String
+  public let isBuiltIn: Bool
+  public let portName: String
+
   #if os(iOS)
-    public var id: String { port.uid }
-    public var isBuiltIn: Bool { port.portType == .builtInMic }
-    public var portName: String { port.portName }
-
-    public let port: AVAudioSessionPortDescription
-
     public init(_ port: AVAudioSessionPortDescription) {
-      self.port = port
+      self.id = port.uid
+      self.isBuiltIn = port.portType == .builtInMic
+      self.portName = port.portName
     }
   #else
-    public var id: String { "0" }
-    public var isBuiltIn: Bool { false }
-
-    public init() {}
+    public init() {
+      self.id = "0"
+      self.isBuiltIn = false
+      self.portName = ""
+    }
   #endif
 }
 
@@ -27,7 +28,6 @@ public extension Microphone {
   }
 
   static func == (lhs: Microphone, rhs: Microphone) -> Bool {
-    if lhs.id != rhs.id { return false }
-    return true
+    lhs.id == rhs.id
   }
 }
