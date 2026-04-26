@@ -88,7 +88,7 @@ func createAppTarget(suffix: String = "", isDev: Bool = false, scripts: [TargetS
     name: "WhisperBoard" + suffix,
     destinations: appDestinations,
     product: .app,
-    bundleId: "me.igortarasenko.Whisperboard",
+    bundleId: "com.simplf.Whisperboard",
     deploymentTargets: appDeploymentTargets,
     infoPlist: .extendingDefault(with: appInfoPlist),
     sources: "App/Sources/**",
@@ -160,6 +160,7 @@ let project = Project(
     base: [
       "GCC_TREAT_WARNINGS_AS_ERRORS": "YES",
       "SWIFT_TREAT_WARNINGS_AS_ERRORS": "YES",
+      "SWIFT_VERSION": "6.0",
       "IPHONEOS_DEPLOYMENT_TARGET": SettingValue(stringLiteral: deploymentTargetString),
       "ENABLE_BITCODE": "NO",
       "ENABLE_USER_SCRIPT_SANDBOXING": "NO",
@@ -232,7 +233,7 @@ let project = Project(
         name: "ShareExtension",
         destinations: appDestinations,
         product: .appExtension,
-        bundleId: "me.igortarasenko.Whisperboard.ShareExtension",
+        bundleId: "com.simplf.Whisperboard.ShareExtension",
         infoPlist: .extendingDefault(with: [
           "CFBundleDisplayName": "$(PRODUCT_NAME)",
           "CFBundleShortVersionString": Plist.Value(stringLiteral: version),
@@ -284,7 +285,6 @@ let project = Project(
           .external(name: "AsyncAlgorithms"),
           .external(name: "AudioKit"),
           .external(name: "ComposableArchitecture"),
-          .external(name: "DependenciesAdditions"),
           .external(name: "DSWaveformImage"),
           .external(name: "DSWaveformImageViews"),
           .external(name: "DynamicColor"),
@@ -310,6 +310,7 @@ let project = Project(
         settings: .settings(
           base: [
             "SWIFT_OBJC_BRIDGING_HEADER": "$SRCROOT/Support/AppKit/Bridging.h",
+            "SWIFT_STRICT_CONCURRENCY": "complete",
           ]
         )
       ),
