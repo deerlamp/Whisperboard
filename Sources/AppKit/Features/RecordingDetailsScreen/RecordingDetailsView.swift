@@ -1,3 +1,4 @@
+import CasePaths
 import Common
 import ComposableArchitecture
 import Inject
@@ -13,7 +14,10 @@ struct RecordingDetails {
   }
 
   struct TimelineItem: Equatable, Identifiable {
-    var id: Duration { startTime }
+    var id: Duration {
+      startTime
+    }
+
     var text: String
     var startTime: Duration
     var endTime: Duration
@@ -33,14 +37,17 @@ struct RecordingDetails {
       } ?? []
     }
 
-    var shareAudioFileURL: URL { recordingCard.recording.fileURL }
+    var shareAudioFileURL: URL {
+      recordingCard.recording.fileURL
+    }
 
     init(recordingCard: RecordingCard.State, displayMode: DisplayMode = .text) {
       self.recordingCard = recordingCard
-      _displayMode = Shared(displayMode)
+      _displayMode = Shared(value: displayMode)
     }
   }
 
+  @CasePathable
   enum Action: Equatable, BindableAction {
     case binding(BindingAction<State>)
     case recordingCard(RecordingCard.Action)
@@ -49,6 +56,7 @@ struct RecordingDetails {
     case delegate(Delegate)
     case actionSheet(PresentationAction<RecordingActionsSheet.Action>)
     case presentActionSheet
+    case recordingTitleChanged(String)
 
     enum Alert: Hashable {
       case deleteDialogConfirmed
@@ -72,6 +80,12 @@ struct RecordingDetails {
         return .none
 
       case .recordingCard:
+        return .none
+
+      case let .recordingTitleChanged(title):
+        state.recordingCard.$recording.withLock {
+          $0.title = title
+        }
         return .none
 
       case .delete:
@@ -123,6 +137,7 @@ struct RecordingDetails {
 
 // MARK: - RecordingDetailsView
 
+@MainActor
 struct RecordingDetailsView: View {
   enum Field: Int, CaseIterable {
     case title, text
@@ -167,11 +182,10 @@ struct RecordingDetailsView: View {
   }
 
   private var waveformProgressView: some View {
-    WaveformProgressView(
-      store: store.scope(
-        state: \.recordingCard.playerControls.waveform,
-        action: \.recordingCard.playerControls.waveform
-      )
+    let recordingCardStore = store.scope(state: \.recordingCard, action: \.recordingCard)
+    let playerControlsStore = recordingCardStore.scope(state: \.playerControls, action: \.playerControls)
+    return WaveformProgressView(
+      store: playerControlsStore.scope(state: \.waveform, action: \.waveform)
     )
     .padding(.horizontal, .grid(4))
   }
@@ -212,7 +226,7 @@ struct RecordingDetailsView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .padding(.vertical, .grid(2))
       .padding(.horizontal, .grid(4))
-      // .id(1)
+    // .id(1)
   }
 
   private var timelineTranscriptionView: some View {
@@ -251,6 +265,7 @@ struct RecordingDetailsView: View {
 
 // MARK: - RecordingDetailsHeaderView
 
+@MainActor
 struct RecordingDetailsHeaderView: View {
   @Perception.Bindable var store: StoreOf<RecordingDetails>
   @FocusState var focusedField: RecordingDetailsView.Field?
@@ -260,7 +275,10 @@ struct RecordingDetailsHeaderView: View {
       VStack(spacing: .grid(2)) {
         TextField(
           "Untitled",
-          text: $store.recordingCard.recording.title,
+          text: Binding(
+            get: { store.recordingCard.recording.title },
+            set: { store.send(.recordingTitleChanged($0)) }
+          ),
           axis: .vertical
         )
         .focused($focusedField, equals: .title)
@@ -290,11 +308,14 @@ struct RecordingDetailsHeaderView: View {
         if let error = store.recordingCard.recording.transcription?.status.errorMessage {
           Text("Last transcription failed")
             .textStyle(.error)
-          
+
           Text(error)
             .textStyle(.error)
         } else {
-          TranscriptionControlsView(store: store.scope(state: \.recordingCard, action: \.recordingCard), queueInfo: nil)
+          TranscriptionControlsView(
+            store: store.scope(state: \.recordingCard, action: \.recordingCard),
+            queueInfo: nil
+          )
         }
       }
       .padding(.horizontal, .grid(4))

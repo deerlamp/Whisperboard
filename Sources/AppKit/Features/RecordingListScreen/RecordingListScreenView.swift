@@ -10,9 +10,9 @@ import SwiftUIIntrospect
 // MARK: - RecordingListScreen
 
 @Reducer
-struct RecordingListScreen {
+struct RecordingListScreen: Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     @Shared(.recordings) var recordings: IdentifiedArrayOf<RecordingInfo>
     @Shared(.transcriptionTasks) var transcriptionTasks: IdentifiedArrayOf<TranscriptionTask>
 
@@ -23,7 +23,8 @@ struct RecordingListScreen {
     @Presents var alert: AlertState<Action.Alert>?
   }
 
-  enum Action: BindableAction, Equatable {
+  @CasePathable
+  enum Action: BindableAction, Equatable, Sendable {
     case binding(BindingAction<State>)
     case task
     case recordingCard(IdentifiedActionOf<RecordingCard>)
@@ -37,6 +38,7 @@ struct RecordingListScreen {
     case deleteSwipeActionTapped(RecordingInfo.ID)
     case didSyncRecordings(TaskResult<[RecordingInfo]>)
     case delegate(Delegate)
+    case setIsImportingFiles(Bool)
 
     enum Alert: Equatable {
       case deleteDialogConfirmed(id: RecordingInfo.ID)
@@ -58,6 +60,10 @@ struct RecordingListScreen {
     // Sync cards amount with recordings amount
     Reduce<State, Action> { state, action in
       switch action {
+      case let .setIsImportingFiles(isImporting):
+        state.isImportingFiles = isImporting
+        return .none
+
       case .task:
         // Create initial recording cards
         state.recordingCards = createCards(for: state)
@@ -75,7 +81,7 @@ struct RecordingListScreen {
 
       case let .addFileRecordings(urls):
         return .run { send in
-          await send(.binding(.set(\.isImportingFiles, true)))
+          await send(.setIsImportingFiles(true), animation: .gentleBounce())
 
           for url in urls {
             let duration = try await getFileDuration(url: url)
@@ -83,19 +89,20 @@ struct RecordingListScreen {
             logs.info("Importing file from \(url) to \(recording.fileURL)")
             try await fileImport.importFile(url, recording.fileURL)
             logs.info("Adding recording info: \(recording)")
-            await send(.addRecordingInfo(recording))
+            await send(.addRecordingInfo(recording), animation: .gentleBounce())
           }
 
-          await send(.binding(.set(\.isImportingFiles, false)))
-          await send(.didFinishImportingFiles)
+          await send(.setIsImportingFiles(false), animation: .gentleBounce())
+          await send(.didFinishImportingFiles, animation: .gentleBounce())
         } catch: { error, send in
-          await send(.binding(.set(\.isImportingFiles, false)))
-          await send(.failedToAddRecordings(error: error.equatable))
+          await send(.setIsImportingFiles(false), animation: .gentleBounce())
+          await send(.failedToAddRecordings(error: error.equatable), animation: .gentleBounce())
         }
-        .animation(.gentleBounce())
 
       case let .addRecordingInfo(recording):
-        state.recordings.insert(recording, at: 0)
+        _ = state.$recordings.withLock {
+          $0.insert(recording, at: 0)
+        }
         return .none
 
       case let .failedToAddRecordings(error):
@@ -113,7 +120,9 @@ struct RecordingListScreen {
           try? FileManager.default.removeItem(at: url)
         }
         state.recordingCards.removeAll { $0.id == id }
-        state.recordings.removeAll { $0.id == id }
+        state.$recordings.withLock {
+          $0.removeAll { $0.id == id }
+        }
 
         return .none
 
@@ -122,7 +131,9 @@ struct RecordingListScreen {
         return .none
 
       case let .didSyncRecordings(.success(recordings)):
-        state.recordings = recordings.identifiedArray
+        state.$recordings.withLock {
+          $0 = recordings.identifiedArray
+        }
         return .none
 
       case let .didSyncRecordings(.failure(error)):
@@ -143,10 +154,10 @@ struct RecordingListScreen {
   }
 
   private func createCards(for state: State) -> IdentifiedArrayOf<RecordingCard.State> {
-    state.$recordings.elements
+    state.recordings.elements
       .map { recording in
         state.recordingCards[id: recording.id] ?? RecordingCard.State(
-          recording: recording
+          recording: Shared(value: recording)
         )
       }
       .sorted(by: { $0.recording.date > $1.recording.date })
@@ -168,6 +179,7 @@ struct RecordingListScreen {
 
 // MARK: - RecordingListScreenView
 
+@MainActor
 struct RecordingListScreenView: View {
   @Perception.Bindable var store: StoreOf<RecordingListScreen>
 
@@ -194,22 +206,24 @@ struct RecordingListScreenView: View {
   private var content: some View {
     List {
       ForEach(store.scope(state: \.recordingCards, action: \.recordingCard)) { cardStore in
-        Button {
-          store.send(.delegate(.recordingCardTapped(cardStore.state)))
-        } label: {
-          RecordingCardView(
-            store: cardStore,
-            queueInfo: store.transcriptionTasks.firstIndex { $0.recordingInfoID == cardStore.id }
-              .flatMap { RecordingCard.QueueInfo(position: $0 + 1, total: store.transcriptionTasks.count) }
-          )
-        }
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-          Button(role: .destructive) {
-            store.send(.deleteSwipeActionTapped(cardStore.id))
+        WithPerceptionTracking {
+          Button {
+            store.send(.delegate(.recordingCardTapped(cardStore.state)))
           } label: {
-            Label("Delete", systemImage: "trash")
+            RecordingCardView(
+              store: cardStore,
+              queueInfo: store.transcriptionTasks.firstIndex { $0.recordingInfoID == cardStore.id }
+                .flatMap { RecordingCard.QueueInfo(position: $0 + 1, total: store.transcriptionTasks.count) }
+            )
+          }
+          .listRowSeparator(.hidden)
+          .listRowBackground(Color.clear)
+          .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+              store.send(.deleteSwipeActionTapped(cardStore.id))
+            } label: {
+              Label("Delete", systemImage: "trash")
+            }
           }
         }
       }
@@ -255,6 +269,7 @@ extension RecordingListScreenView {
 
 // MARK: - EmptyStateView
 
+@MainActor
 struct EmptyStateView: View {
   @State private var isAnimating = false
 

@@ -1,3 +1,4 @@
+import CasePaths
 import Common
 import ComposableArchitecture
 import Foundation
@@ -6,20 +7,24 @@ import WhisperKit
 // MARK: - RecordingCard
 
 @Reducer
-struct RecordingCard {
+struct RecordingCard: Sendable {
   struct QueueInfo: Equatable {
     let position: Int
     let total: Int
   }
 
   @ObservableState
-  struct State: Equatable, Identifiable, Then {
-    var id: String { recording.id }
+  struct State: Equatable, Identifiable, Sendable, Then {
+    var id: String {
+      recording.id
+    }
 
     @Shared var recording: RecordingInfo
     var playerControls: PlayerControls.State
 
-    var transcription: String { recording.text }
+    var transcription: String {
+      recording.text
+    }
 
     init(recording: Shared<RecordingInfo>) {
       _recording = recording
@@ -27,7 +32,8 @@ struct RecordingCard {
     }
   }
 
-  enum Action: BindableAction, Equatable {
+  @CasePathable
+  enum Action: BindableAction, Equatable, Sendable {
     case binding(BindingAction<State>)
     case playerControls(PlayerControls.Action)
     case delegate(DelegateAction)
@@ -65,7 +71,9 @@ struct RecordingCard {
         return .send(.delegate(.enqueueTaskForRecordingID(state.recording.id)))
 
       case .cancelTranscriptionButtonTapped:
-        state.recording.transcription?.status = .canceled
+        state.$recording.withLock {
+          $0.transcription?.status = .canceled
+        }
         return .send(.delegate(.cancelTaskForRecordingID(state.recording.id)))
 
       case .resumeTranscriptionButtonTapped:
@@ -83,19 +91,25 @@ extension Transcription.Status {
     switch self {
     case .notStarted:
       "Waiting to start..."
+
     case .loading:
       "Loading model..."
+
     case let .uploading(progress):
       "Uploading... \(String(format: "%.0f", progress * 100))%"
+
     case let .error(message: message):
       message
 
     case let .progress(progress, _):
       "Transcribing... \(String(format: "%.0f", progress * 100))%"
+
     case .done:
       "Done"
+
     case .canceled:
       "Canceled"
+
     case let .paused(_, progress):
       "Paused (\(String(format: "%.0f", progress * 100))%)"
     }

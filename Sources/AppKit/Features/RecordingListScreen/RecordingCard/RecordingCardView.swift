@@ -20,7 +20,10 @@ struct RecordingCardView: View {
 
   var cardView: some View {
     VStack(spacing: .grid(2)) {
-      PlayerControlsView(store: store.scope(state: \.playerControls, action: \.playerControls))
+      let playerControlsStore = store.scope(state: \.playerControls, action: \.playerControls)
+      PlayerControlsView(
+        store: playerControlsStore
+      )
 
       ZStack(alignment: .top) {
         VStack(alignment: .leading, spacing: .grid(2)) {
@@ -72,13 +75,14 @@ struct RecordingCardView: View {
 
 // MARK: - TranscriptionControlsView
 
+@MainActor
 struct TranscriptionControlsView: View {
   @Perception.Bindable var store: StoreOf<RecordingCard>
   let queueInfo: RecordingCard.QueueInfo?
 
   var body: some View {
     WithPerceptionTracking {
-      if let queueInfo = queueInfo, queueInfo.position > 1 {
+      if let queueInfo, queueInfo.position > 1 {
         queueInfoView(queueInfo: queueInfo)
       } else if store.recording.transcription?.status.isPaused == true {
         pausedTranscriptionView

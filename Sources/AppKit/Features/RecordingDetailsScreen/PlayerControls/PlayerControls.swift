@@ -8,18 +8,24 @@ import SwiftUI
 struct PlayerControls {
   @ObservableState
   struct State: Equatable {
-    @CasePathable
     enum Mode: Equatable {
       case idle
       case playing(progress: Double)
       case paused(progress: Double)
+
+      var isPlaying: Bool {
+        if case .playing = self {
+          return true
+        }
+        return false
+      }
     }
 
     var mode = Mode.idle
     var waveform: WaveformProgress.State
 
     var isPlaying: Bool {
-      mode.is(\.playing)
+      mode.isPlaying
     }
 
     var progress: Double? {
@@ -32,7 +38,9 @@ struct PlayerControls {
     var title: String
     var dateString: String
     var duration: TimeInterval
-    var audioFileURL: URL { waveform.audioFileURL }
+    var audioFileURL: URL {
+      waveform.audioFileURL
+    }
 
     var currentTimeString: String {
       let currentTime = progress.map { $0 * duration } ?? duration
@@ -51,11 +59,12 @@ struct PlayerControls {
     }
   }
 
+  @CasePathable
   enum Action: BindableAction, Equatable {
-      case binding(BindingAction<State>)
-      case waveform(WaveformProgress.Action)
-      case playButtonTapped
-      case playbackUpdated(PlaybackState)
+    case binding(BindingAction<State>)
+    case waveform(WaveformProgress.Action)
+    case playButtonTapped
+    case playbackUpdated(PlaybackState)
   }
 
   @Dependency(\.audioPlayer) var audioPlayer: AudioPlayerClient
@@ -75,8 +84,8 @@ struct PlayerControls {
       case .binding:
         return .none
 
-      case .waveform(.binding(\.progress)):
-        guard state.mode.is(\.playing) else { return .none }
+      case .waveform(.setProgress):
+        guard state.mode.isPlaying else { return .none }
         return .run { [progress = state.waveform.progress] _ in
           await audioPlayer.seekProgress(progress)
         }
@@ -99,7 +108,7 @@ struct PlayerControls {
           .cancellable(id: PlayID(), cancelInFlight: true)
 
         case .playing:
-          return .run { send in
+          return .run { _ in
             //            await audioPlayer.pause()
             await audioPlayer.stop()
           }
@@ -163,6 +172,7 @@ struct PlayerControls {
 
 // MARK: - PlayerControlsView
 
+@MainActor
 struct PlayerControlsView: View {
   @Perception.Bindable var store: StoreOf<PlayerControls>
 
@@ -202,9 +212,11 @@ struct PlayerControlsView: View {
         .padding([.horizontal, .top], .grid(2))
 
         if store.isPlaying {
-          WaveformProgressView(store: store.scope(state: \.waveform, action: \.waveform))
-            .transition(.scale.combined(with: .opacity))
-            .padding(.horizontal, .grid(2))
+          WaveformProgressView(
+            store: store.scope(state: \.waveform, action: \.waveform)
+          )
+          .transition(.scale.combined(with: .opacity))
+          .padding(.horizontal, .grid(2))
         }
       }
       .animation(.smooth, value: store.mode)

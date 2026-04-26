@@ -1,3 +1,4 @@
+import CasePaths
 import Common
 import ComposableArchitecture
 import Inject
@@ -7,9 +8,9 @@ import WhisperKit
 // MARK: - RecordingActionsSheet
 
 @Reducer
-struct RecordingActionsSheet {
+struct RecordingActionsSheet: Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     @Shared var displayMode: RecordingDetails.DisplayMode
     @SharedReader var isTranscribing: Bool
     @SharedReader var transcription: Transcription?
@@ -17,7 +18,8 @@ struct RecordingActionsSheet {
     var sharingContent: SharingContent?
   }
 
-  enum Action: Equatable, BindableAction {
+  @CasePathable
+  enum Action: Equatable, BindableAction, Sendable {
     case binding(BindingAction<State>)
     case shareAudio
     case shareText
@@ -26,6 +28,8 @@ struct RecordingActionsSheet {
     case copyText
     case delete
     case restartTranscription
+    case setDisplayMode(RecordingDetails.DisplayMode)
+    case setSharingContent(SharingContent?)
   }
 
   struct SharingContent: Identifiable, Equatable {
@@ -34,7 +38,7 @@ struct RecordingActionsSheet {
     }
 
     let id: UUID = .init()
-    let value: Any
+    let value: any Sendable
     let type: ContentType
 
     static func == (lhs: SharingContent, rhs: SharingContent) -> Bool {
@@ -47,9 +51,19 @@ struct RecordingActionsSheet {
   var body: some Reducer<State, Action> {
     BindingReducer()
 
-    Reduce { state, action in
+    Reduce<State, Action> { state, action in
       switch action {
       case .binding:
+        return .none
+
+      case let .setDisplayMode(displayMode):
+        state.$displayMode.withLock {
+          $0 = displayMode
+        }
+        return .none
+
+      case let .setSharingContent(content):
+        state.sharingContent = content
         return .none
 
       case .shareAudio:
@@ -62,7 +76,7 @@ struct RecordingActionsSheet {
         return .run { [transcription = state.transcription] send in
           await hapticEngine.feedback(.medium)
           guard let text = transcription?.text, !text.isEmpty else { return }
-          await send(.set(\.sharingContent, SharingContent(value: text, type: .text)))
+          await send(.setSharingContent(SharingContent(value: text, type: .text)))
         }
 
       case .shareVTT:
@@ -70,7 +84,7 @@ struct RecordingActionsSheet {
           await hapticEngine.feedback(.medium)
           guard let transcription, !transcription.text.isEmpty else { return }
           if let vttURL = await generateVTTContent(transcription: transcription, audioFileURL: audioFileURL) {
-            await send(.set(\.sharingContent, SharingContent(value: vttURL, type: .vtt)))
+            await send(.setSharingContent(SharingContent(value: vttURL, type: .vtt)))
           }
         }
 
@@ -79,7 +93,7 @@ struct RecordingActionsSheet {
           await hapticEngine.feedback(.medium)
           guard let transcription, !transcription.text.isEmpty else { return }
           if let srtURL = await generateSRTContent(transcription: transcription, audioFileURL: audioFileURL) {
-            await send(.set(\.sharingContent, SharingContent(value: srtURL, type: .srt)))
+            await send(.setSharingContent(SharingContent(value: srtURL, type: .srt)))
           }
         }
 
@@ -163,6 +177,7 @@ struct RecordingActionsSheet {
 
 // MARK: - RecordingActionsSheetView
 
+@MainActor
 struct RecordingActionsSheetView: View {
   @Perception.Bindable var store: StoreOf<RecordingActionsSheet>
 
@@ -183,7 +198,13 @@ struct RecordingActionsSheetView: View {
   }
 
   private var displayModeToggle: some View {
-    Picker("Display Mode", selection: $store.displayMode) {
+    Picker(
+      "Display Mode",
+      selection: Binding(
+        get: { store.displayMode },
+        set: { store.send(.setDisplayMode($0)) }
+      )
+    ) {
       Label("Text", systemImage: "text.alignleft")
         .tag(RecordingDetails.DisplayMode.text)
 
