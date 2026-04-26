@@ -1,4 +1,5 @@
 import AudioProcessing
+import CasePaths
 import Common
 import ComposableArchitecture
 import Foundation
@@ -9,16 +10,19 @@ import WhisperKit
 // MARK: - ModelSelector
 
 @Reducer
-struct ModelSelector {
+struct ModelSelector: Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     struct LoadingProgress: Equatable {
       var id: Model.ID
       var progress: Double
     }
 
     struct ModelInfo: Equatable, Identifiable {
-      var id: Model.ID { model.id }
+      var id: Model.ID {
+        model.id
+      }
+
       var model: Model
       var title: String
       var info: String
@@ -42,7 +46,11 @@ struct ModelSelector {
 
     var selectedModelID: Model.ID {
       get { settings.selectedModelName }
-      set { settings.selectedModelName = newValue }
+      set {
+        $settings.withLock {
+          $0.selectedModelName = newValue
+        }
+      }
     }
 
     var selectedModelLabel: String {
@@ -55,11 +63,12 @@ struct ModelSelector {
     }
 
     init() {
-      _loadingProgress = Shared(nil)
+      _loadingProgress = Shared(value: nil)
     }
   }
 
-  enum Action: BindableAction {
+  @CasePathable
+  enum Action: BindableAction, Sendable {
     case binding(BindingAction<State>)
     case downloadButtonTapped(Model.ID)
     case downloadTask(id: Model.ID, TaskResult<Void>)
@@ -83,7 +92,7 @@ struct ModelSelector {
   var body: some ReducerOf<Self> {
     BindingReducer()
 
-    Reduce { state, action in
+    Reduce<State, Action> { state, action in
       switch action {
       case .binding:
         return .none
@@ -99,12 +108,16 @@ struct ModelSelector {
         return loadModel(state: &state, id: id)
 
       case let .downloadTask(id: id, .success):
-        state.loadingProgress = nil
+        state.$loadingProgress.withLock {
+          $0 = nil
+        }
         state.selectedModelID = id
         return loadNextInQueue(state: &state)
 
       case let .downloadTask(id: _, .failure(error)):
-        state.loadingProgress = nil
+        state.$loadingProgress.withLock {
+          $0 = nil
+        }
         state.alert = .error(message: error.localizedDescription)
         return loadNextInQueue(state: &state)
 
@@ -114,7 +127,9 @@ struct ModelSelector {
       case let .modelsResponse(.success(newModels)):
         let models = newModels.filter { $0.position <= 100 }
         @Shared(.availableModels) var _models
-        _models = models
+        $_models.withLock {
+          $0 = models
+        }
         state.localModels = models.filter { $0.model.isLocal && !$0.model.isDisabled }.identifiedArray
         state.availableModels = models.filter { !$0.model.isLocal && !$0.model.isDisabled }.identifiedArray
         state.disabledModels = models.filter(\.model.isDisabled).identifiedArray
@@ -128,7 +143,9 @@ struct ModelSelector {
         state.loadQueue.remove(id)
         if state.loadingProgress?.id == id {
           logs.debug("Cancelled current download of \(id)")
-          state.loadingProgress = nil
+          state.$loadingProgress.withLock {
+            $0 = nil
+          }
           return .cancel(id: CancelID.modelID(id))
         }
         return .none
@@ -177,11 +194,15 @@ struct ModelSelector {
 
   private func loadModel(state: inout State, id: Model.ID) -> Effect<Action> {
     state.loadQueue.remove(id)
-    state.loadingProgress = State.LoadingProgress(id: id, progress: 0)
+    state.$loadingProgress.withLock {
+      $0 = State.LoadingProgress(id: id, progress: 0)
+    }
     return .run { [loadingProgress = state.$loadingProgress] send in
       await send(.downloadTask(id: id, TaskResult {
         try await transcriptionStream.loadModel(id) { progress in
-          loadingProgress.wrappedValue?.progress = progress
+          loadingProgress.withLock {
+            $0?.progress = progress
+          }
         }
         logs.debug("Loaded model \(id) isCancelled: \(Task.isCancelled)")
       }))
@@ -201,6 +222,7 @@ struct ModelSelector {
 
 // MARK: - ModelSelectorView
 
+@MainActor
 struct ModelSelectorView: View {
   @Perception.Bindable var store: Store<ModelSelector.State, ModelSelector.Action>
 
@@ -222,6 +244,7 @@ struct ModelSelectorView: View {
 
 // MARK: - DownloadedSection
 
+@MainActor
 private struct DownloadedSection: View {
   @Perception.Bindable var store: Store<ModelSelector.State, ModelSelector.Action>
 
@@ -244,6 +267,7 @@ private struct DownloadedSection: View {
 
 // MARK: - AvailableSection
 
+@MainActor
 private struct AvailableSection: View {
   @Perception.Bindable var store: Store<ModelSelector.State, ModelSelector.Action>
 
@@ -260,6 +284,7 @@ private struct AvailableSection: View {
 
 // MARK: - NotSupportedSection
 
+@MainActor
 private struct NotSupportedSection: View {
   @Perception.Bindable var store: Store<ModelSelector.State, ModelSelector.Action>
 
@@ -284,6 +309,7 @@ private struct NotSupportedSection: View {
 
 // MARK: - ModelRow
 
+@MainActor
 private struct ModelRow: View {
   @Perception.Bindable var store: Store<ModelSelector.State, ModelSelector.Action>
   let model: ModelSelector.State.ModelInfo
@@ -343,6 +369,7 @@ private struct ModelRow: View {
 
 // MARK: - ModelInfoView
 
+@MainActor
 struct ModelInfoView: View {
   let model: ModelSelector.State.ModelInfo
 
@@ -488,11 +515,11 @@ private func modelAttributes(for model: Model) -> ModelSelector.State.ModelInfo 
     title = model.name.capitalized
     position = 100 // Default position for unknown models
   }
-  
+
   if isEnglishOnly {
     title += " English"
   }
-  
+
   if isTurbo {
     title += " Turbo"
   }
@@ -526,8 +553,8 @@ private func directoryExistsAndNotEmptyAtPath(_ path: String) -> Bool {
   }
 }
 
-extension PersistenceReaderKey where Self == PersistenceKeyDefault<InMemoryKey<[ModelSelector.State.ModelInfo]>> {
+extension SharedReaderKey where Self == InMemoryKey<[ModelSelector.State.ModelInfo]>.Default {
   static var availableModels: Self {
-    PersistenceKeyDefault(.inMemory("availableModels"), [])
+    Self[.inMemory("availableModels"), default: []]
   }
 }

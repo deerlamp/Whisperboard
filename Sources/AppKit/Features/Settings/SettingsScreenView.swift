@@ -6,6 +6,7 @@ import SwiftUI
 
 // MARK: - SettingsScreenView
 
+@MainActor
 struct SettingsScreenView: View {
   @Perception.Bindable var store: StoreOf<SettingsScreen>
 
@@ -44,6 +45,7 @@ struct SettingsScreenView: View {
 
 // MARK: - ModelSectionView
 
+@MainActor
 struct ModelSectionView: View {
   @Perception.Bindable var store: StoreOf<SettingsScreen>
 
@@ -73,6 +75,7 @@ struct ModelSectionView: View {
 
 // MARK: - SpeechSectionView
 
+@MainActor
 struct SpeechSectionView: View {
   @Perception.Bindable var store: StoreOf<SettingsScreen>
 
@@ -83,7 +86,10 @@ struct SpeechSectionView: View {
           icon: .system(name: "globe", background: .systemGreen.darken(by: 0.1)),
           title: "Language",
           choices: store.availableLanguages.map(\.titleCased),
-          selectedIndex: $store.selectedLanguageIndex
+          selectedIndex: Binding(
+            get: { store.selectedLanguageIndex },
+            set: { store.send(.setSelectedLanguageIndex($0)) }
+          )
         )
       }
       .listRowBackground(Color.DS.Background.secondary).listRowSeparator(.hidden)
@@ -92,7 +98,10 @@ struct SpeechSectionView: View {
         SettingsToggleButton(
           icon: .system(name: "waveform.path.ecg", background: .systemPurple),
           title: "Allow Background Audio",
-          isOn: $store.settings.shouldMixWithOtherAudio
+          isOn: Binding(
+            get: { store.settings.shouldMixWithOtherAudio },
+            set: { store.send(.setShouldMixWithOtherAudio($0)) }
+          )
         )
       } footer: {
         Text(
@@ -107,6 +116,7 @@ struct SpeechSectionView: View {
 // MARK: - DebugSectionView
 
 #if DEBUG
+  @MainActor
   struct DebugSectionView: View {
     @Perception.Bindable var store: StoreOf<SettingsScreen>
 
@@ -118,7 +128,10 @@ struct SpeechSectionView: View {
           SettingsToggleButton(
             icon: .system(name: "wand.and.stars", background: .systemTeal),
             title: "Enable Fixtures",
-            isOn: $store.settings.useMockedClients
+            isOn: Binding(
+              get: { store.settings.useMockedClients },
+              set: { store.send(.setUseMockedClients($0)) }
+            )
           )
 
           SettingsSheetButton(icon: .system(name: "ladybug", background: .systemGreen), title: "Show logs") {
@@ -141,6 +154,7 @@ struct SpeechSectionView: View {
 
 // MARK: - StorageSectionView
 
+@MainActor
 struct StorageSectionView: View {
   @Perception.Bindable var store: StoreOf<SettingsScreen>
 
@@ -174,7 +188,10 @@ struct StorageSectionView: View {
         SettingsToggleButton(
           icon: .system(name: "icloud.and.arrow.up", background: .systemBlue),
           title: "iCloud Backup",
-          isOn: $store.settings.isICloudSyncEnabled
+          isOn: Binding(
+            get: { store.settings.isICloudSyncEnabled },
+            set: { store.send(.setICloudSyncEnabled($0)) }
+          )
         )
         .disabled(store.isICloudSyncInProgress)
         .blur(radius: store.isICloudSyncInProgress ? 3 : 0)
@@ -197,6 +214,7 @@ struct StorageSectionView: View {
 
 // MARK: - FeedbackSectionView
 
+@MainActor
 struct FeedbackSectionView: View {
   @Perception.Bindable var store: StoreOf<SettingsScreen>
 
@@ -222,6 +240,7 @@ struct FeedbackSectionView: View {
 
 // MARK: - FooterSectionView
 
+@MainActor
 struct FooterSectionView: View {
   @Perception.Bindable var store: StoreOf<SettingsScreen>
 

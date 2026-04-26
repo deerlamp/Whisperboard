@@ -1,3 +1,4 @@
+import CasePaths
 import Common
 import ComposableArchitecture
 import Inject
@@ -7,14 +8,15 @@ import SwiftUI
 // MARK: - PremiumFeaturesSection
 
 @Reducer
-struct PremiumFeaturesSection {
+struct PremiumFeaturesSection: Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     @Shared(.premiumFeatures) var premiumFeatures
     @Presents var purchaseModal: PurchaseLiveTranscriptionModal.State?
   }
 
-  enum Action: BindableAction {
+  @CasePathable
+  enum Action: BindableAction, Sendable {
     case binding(BindingAction<State>)
     case buyLiveTranscriptionTapped
     case purchaseModal(PresentationAction<PurchaseLiveTranscriptionModal.Action>)
@@ -25,7 +27,7 @@ struct PremiumFeaturesSection {
 
   var body: some ReducerOf<Self> {
     BindingReducer()
-    Reduce { state, action in
+    Reduce<State, Action> { state, action in
       switch action {
       case .buyLiveTranscriptionTapped:
         state.purchaseModal = PurchaseLiveTranscriptionModal.State()
@@ -33,7 +35,9 @@ struct PremiumFeaturesSection {
 
       case .purchaseModal(.presented(.delegate(.didFinishTransaction))):
         state.purchaseModal = nil
-        state.premiumFeatures.liveTranscriptionIsPurchased = true
+        state.$premiumFeatures.withLock {
+          $0.liveTranscriptionIsPurchased = true
+        }
         return .none
 
       case .binding, .purchaseModal:
@@ -62,11 +66,15 @@ struct PremiumFeaturesSection {
         }
 
       case let .checkPurchaseStatus(isPurchased):
-        state.premiumFeatures.liveTranscriptionIsPurchased = isPurchased
+        state.$premiumFeatures.withLock {
+          $0.liveTranscriptionIsPurchased = isPurchased
+        }
         return .none
 
       case let .productFound(isFound):
-        state.premiumFeatures.isProductFound = isFound
+        state.$premiumFeatures.withLock {
+          $0.isProductFound = isFound
+        }
         return .none
       }
     }
@@ -78,6 +86,7 @@ struct PremiumFeaturesSection {
 
 // MARK: - PremiumFeaturesSectionView
 
+@MainActor
 struct PremiumFeaturesSectionView: View {
   @Perception.Bindable var store: StoreOf<PremiumFeaturesSection>
 

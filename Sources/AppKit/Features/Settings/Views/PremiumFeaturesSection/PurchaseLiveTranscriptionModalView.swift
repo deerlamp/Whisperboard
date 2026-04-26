@@ -1,3 +1,4 @@
+import CasePaths
 import Common
 import ComposableArchitecture
 import StoreKit
@@ -6,19 +7,20 @@ import SwiftUI
 // MARK: - PurchaseLiveTranscriptionModal
 
 @Reducer
-struct PurchaseLiveTranscriptionModal {
+struct PurchaseLiveTranscriptionModal: Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     @Shared(.premiumFeatures) var premiumFeatures
     var isPurchasing = false
     var errorMessage: String?
     var productPrice: String?
     var isLoading = true
-    var restoreProgress: ProgressiveResultOf<Bool> = .none
+    var restoreProgress: ProgressiveResultOf<Bool> = .idle
     @Presents var alert: AlertState<Action.Alert>?
   }
 
-  enum Action: Equatable {
+  @CasePathable
+  enum Action: Equatable, Sendable {
     case onTask
     case didFetchProduct(TaskResult<String>)
     case purchaseButtonTapped
@@ -50,12 +52,16 @@ struct PurchaseLiveTranscriptionModal {
       switch self {
       case .productNotFound:
         "The product could not be found. Please try again later."
+
       case .unverifiedTransaction:
         "The transaction could not be verified. Please contact support."
+
       case .userCancelled:
         "The purchase was cancelled."
+
       case .transactionPending:
         "The transaction is pending. Please check your payment method and try again."
+
       case .unknownError:
         "An unknown error occurred. Please try again later."
       }
@@ -66,7 +72,7 @@ struct PurchaseLiveTranscriptionModal {
   @Dependency(\.build) var build: BuildClient
 
   var body: some ReducerOf<Self> {
-    Reduce { state, action in
+    Reduce<State, Action> { state, action in
       switch action {
       case .onTask:
         state.isLoading = true
@@ -94,13 +100,17 @@ struct PurchaseLiveTranscriptionModal {
 
       case let .purchaseResult(.success(isEnabled)):
         state.isPurchasing = false
-        state.premiumFeatures.liveTranscriptionIsPurchased = isEnabled
+        state.$premiumFeatures.withLock {
+          $0.liveTranscriptionIsPurchased = isEnabled
+        }
         return .send(.delegate(.didFinishTransaction))
 
       case let .purchaseResult(.failure(error)):
         state.isPurchasing = false
         state.errorMessage = error.localizedDescription
-        state.premiumFeatures.liveTranscriptionIsPurchased = false
+        state.$premiumFeatures.withLock {
+          $0.liveTranscriptionIsPurchased = false
+        }
         return .none
 
       case .delegate(.didFinishTransaction):
@@ -116,12 +126,18 @@ struct PurchaseLiveTranscriptionModal {
         state.restoreProgress = .success(isSubscribed)
         if !isSubscribed {
           state.alert = .init(
-            title: .init("No Purchases Found"),
-            message: .init("We couldn't find any purchases associated with your account."),
-            dismissButton: .default(.init("OK"))
+            title: { .init("No Purchases Found") },
+            actions: {
+              ButtonState {
+                .init("OK")
+              }
+            },
+            message: { .init("We couldn't find any purchases associated with your account.") }
           )
         } else {
-          state.premiumFeatures.liveTranscriptionIsPurchased = true
+          state.$premiumFeatures.withLock {
+            $0.liveTranscriptionIsPurchased = true
+          }
           return .send(.delegate(.didFinishTransaction))
         }
         return .none

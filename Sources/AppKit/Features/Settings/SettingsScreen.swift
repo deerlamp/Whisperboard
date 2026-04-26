@@ -1,4 +1,5 @@
 import AudioProcessing
+import CasePaths
 import Common
 import ComposableArchitecture
 import Inject
@@ -10,9 +11,9 @@ import WhisperKit
 // MARK: - SettingsScreen
 
 @Reducer
-struct SettingsScreen {
+struct SettingsScreen: Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     @Shared(.settings) var settings: Settings
 
     var modelSelector: ModelSelector.State = .init()
@@ -35,13 +36,18 @@ struct SettingsScreen {
 
     var selectedLanguageIndex: Int {
       get { settings.voiceLanguage.flatMap { availableLanguages.firstIndex(of: $0) } ?? 0 }
-      set { settings.voiceLanguage = newValue == 0 ? nil : availableLanguages[safe: newValue] }
+      set {
+        $settings.withLock {
+          $0.voiceLanguage = newValue == 0 ? nil : availableLanguages[safe: newValue]
+        }
+      }
     }
 
     init() {}
   }
 
-  enum Action: BindableAction {
+  @CasePathable
+  enum Action: BindableAction, Sendable {
     case alert(PresentationAction<Alert>)
     case binding(BindingAction<State>)
     case task
@@ -60,6 +66,10 @@ struct SettingsScreen {
     case suggestFeatureTapped
     case updateInfo
     case updateIsSubscribed(Bool)
+    case setICloudSyncEnabled(Bool)
+    case setSelectedLanguageIndex(Int)
+    case setShouldMixWithOtherAudio(Bool)
+    case setUseMockedClients(Bool)
 
     enum Alert: Equatable {
       case deleteStorageDialogConfirmed
@@ -90,6 +100,28 @@ struct SettingsScreen {
     Reduce<State, Action> { state, action in
       switch action {
       case .binding:
+        return .none
+
+      case let .setICloudSyncEnabled(isEnabled):
+        state.$settings.withLock {
+          $0.isICloudSyncEnabled = isEnabled
+        }
+        return .none
+
+      case let .setSelectedLanguageIndex(index):
+        state.selectedLanguageIndex = index
+        return .none
+
+      case let .setShouldMixWithOtherAudio(isEnabled):
+        state.$settings.withLock {
+          $0.shouldMixWithOtherAudio = isEnabled
+        }
+        return .none
+
+      case let .setUseMockedClients(isEnabled):
+        state.$settings.withLock {
+          $0.useMockedClients = isEnabled
+        }
         return .none
 
       case .modelSelector:
@@ -139,7 +171,9 @@ struct SettingsScreen {
         return .none
 
       case .alert(.presented(.deleteStorageDialogConfirmed)):
-        state.settings.selectedModelName = WhisperKit.recommendedModels().default
+        state.$settings.withLock {
+          $0.selectedModelName = WhisperKit.recommendedModels().default
+        }
         return .run { send in
           try await storage.deleteStorage()
           await send(.updateInfo)
@@ -148,7 +182,9 @@ struct SettingsScreen {
         }
 
       case .alert(.presented(.deleteAllModelsDialogConfirmed)):
-        state.settings.selectedModelName = WhisperKit.recommendedModels().default
+        state.$settings.withLock {
+          $0.selectedModelName = WhisperKit.recommendedModels().default
+        }
         return .run { send in
           try? FileManager.default.removeItem(at: TranscriptionStream.modelDirURL)
           try? FileManager.default.removeItem(at: .documentsDirectory.appendingPathComponent("models"))
@@ -228,8 +264,8 @@ extension AlertState where Action == SettingsScreen.Action.Alert {
   }
 }
 
-public extension PersistenceReaderKey where Self == PersistenceKeyDefault<FileStorageKey<Settings>> {
+public extension SharedReaderKey where Self == FileStorageKey<Settings>.Default {
   static var settings: Self {
-    PersistenceKeyDefault(FileStorageKey<Settings>.settings, .init(selectedModelName: WhisperKit.recommendedModels().default))
+    Self[.settings, default: .init(selectedModelName: WhisperKit.recommendedModels().default)]
   }
 }

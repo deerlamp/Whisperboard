@@ -8,13 +8,14 @@ import SwiftUI
 // MARK: - SubscriptionSection
 
 @Reducer
-struct SubscriptionSection {
+struct SubscriptionSection: Sendable {
   @ObservableState
-  struct State: Equatable {
+  struct State: Equatable, Sendable {
     @Presents var details: SubscriptionDetails.State?
   }
 
-  enum Action: Equatable {
+  @CasePathable
+  enum Action: Equatable, Sendable {
     case details(PresentationAction<SubscriptionDetails.Action>)
     case sectionTapped
   }
@@ -31,7 +32,7 @@ struct SubscriptionSection {
         return .none
       }
     }
-    .ifLet(\.$details, action: /Action.details) {
+    .ifLet(\.$details, action: \.details) {
       SubscriptionDetails()
     }
   }
@@ -39,6 +40,7 @@ struct SubscriptionSection {
 
 // MARK: - SubscriptionSectionView
 
+@MainActor
 struct SubscriptionSectionView: View {
   @Perception.Bindable var store: StoreOf<SubscriptionSection>
 
@@ -125,12 +127,10 @@ struct SubscriptionSectionView: View {
         playbackMode = .playing(.fromProgress(0, toProgress: 1, loopMode: .playOnce))
       }
       .task {
-        try? await Task {
-          while !Task.isCancelled {
-            try await Task.sleep(seconds: 5)
-            playbackMode = .playing(.fromProgress(0, toProgress: 1, loopMode: .playOnce))
-          }
-        }.value
+        while !Task.isCancelled {
+          try? await Task.sleep(seconds: 5)
+          playbackMode = .playing(.fromProgress(0, toProgress: 1, loopMode: .playOnce))
+        }
       }
       .listRowInsets(.init(top: 0, leading: 0, bottom: 0, trailing: 0))
       .listRowBackground(Color.clear)
@@ -171,26 +171,6 @@ struct SubscriptionSectionView: View {
         .opacity(0.3)
     }
     .clipped()
-  }
-}
-
-public extension View {
-  func popover<State, Action>(
-    store: Store<PresentationState<State>, PresentationAction<Action>>,
-    attributes buildAttributes: @escaping ((inout Popover.Attributes) -> Void) = { _ in },
-    @ViewBuilder content: @escaping (_ store: Store<State, Action>) -> some View,
-    @ViewBuilder background: @escaping () -> some View
-  ) -> some View {
-    presentation(store: store) { `self`, $item, destination in
-      self.popover(
-        present: $item,
-        attributes: buildAttributes,
-        view: {
-          destination(content)
-        },
-        background: background
-      )
-    }
   }
 }
 

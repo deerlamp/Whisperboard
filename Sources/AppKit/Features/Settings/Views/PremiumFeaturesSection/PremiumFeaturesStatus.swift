@@ -2,7 +2,7 @@ import ComposableArchitecture
 
 // MARK: - PremiumFeaturesStatus
 
-public struct PremiumFeaturesStatus: Codable, Hashable {
+public struct PremiumFeaturesStatus: Codable, Hashable, Sendable {
   public var liveTranscriptionIsPurchased: Bool? = nil
   public var isProductFound: Bool? = nil
 }
@@ -13,8 +13,8 @@ public enum PremiumFeaturesProductID {
   public static let liveTranscription = "me.igortarasenko.Whisperboard.LiveTranscription"
 }
 
-public extension PersistenceReaderKey where Self == PersistenceKeyDefault<FileStorageKey<PremiumFeaturesStatus>> {
+public extension SharedReaderKey where Self == FileStorageKey<PremiumFeaturesStatus>.Default {
   static var premiumFeatures: Self {
-    PersistenceKeyDefault(.fileStorage(.documentsDirectory.appending(component: "premiumFeatures.json")), PremiumFeaturesStatus())
+    Self[.fileStorage(.documentsDirectory.appending(component: "premiumFeatures.json")), default: PremiumFeaturesStatus()]
   }
 }
