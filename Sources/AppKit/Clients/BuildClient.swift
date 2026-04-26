@@ -5,15 +5,15 @@ import Foundation
 // MARK: - BuildClient
 
 struct BuildClient {
-  var version: () -> String
-  var buildNumber: () -> String
-  var githubURL: () -> URL
-  var personalWebsiteURL: () -> URL
-  var appStoreReviewURL: () -> URL
-  var bugReportURL: () -> URL
-  var featureRequestURL: () -> URL
-  var privacyPolicyURL: () -> URL
-  var termsOfServiceURL: () -> URL
+  var version: @Sendable () -> String
+  var buildNumber: @Sendable () -> String
+  var githubURL: @Sendable () -> URL
+  var personalWebsiteURL: @Sendable () -> URL
+  var appStoreReviewURL: @Sendable () -> URL
+  var bugReportURL: @Sendable () -> URL
+  var featureRequestURL: @Sendable () -> URL
+  var privacyPolicyURL: @Sendable () -> URL
+  var termsOfServiceURL: @Sendable () -> URL
 }
 
 // MARK: DependencyKey
@@ -39,7 +39,7 @@ extension BuildClient: DependencyKey {
 }
 
 extension BuildClient {
-  static var testValue: Self = BuildClient(
+  static let testValue: Self = BuildClient(
     version: { "0.0.0" },
     buildNumber: { "0" },
     githubURL: { URL(staticString: "https://github.com/username") },

@@ -24,10 +24,10 @@ extension DependencyValues {
 
 private enum DidBecomeActiveKey: DependencyKey {
   static let liveValue: @Sendable () async -> AsyncStream<Void> = {
-    await AsyncStream(
-      NotificationCenter.default
+    AsyncStream(
+      UncheckedSendable(NotificationCenter.default
         .notifications(named: UIApplication.didBecomeActiveNotification)
-        .map { _ in }
+        .map { _ in })
     )
   }
 }
@@ -36,10 +36,10 @@ private enum DidBecomeActiveKey: DependencyKey {
 
 private enum WillEnterForegroundKey: DependencyKey {
   static let liveValue: @Sendable () async -> AsyncStream<Void> = {
-    await AsyncStream(
-      NotificationCenter.default
+    AsyncStream(
+      UncheckedSendable(NotificationCenter.default
         .notifications(named: UIApplication.willEnterForegroundNotification)
-        .map { _ in }
+        .map { _ in })
     )
   }
 }
@@ -48,10 +48,10 @@ private enum WillEnterForegroundKey: DependencyKey {
 
 private enum DidEnterBackgroundKey: DependencyKey {
   static let liveValue: @Sendable () async -> AsyncStream<Void> = {
-    await AsyncStream(
-      NotificationCenter.default
+    AsyncStream(
+      UncheckedSendable(NotificationCenter.default
         .notifications(named: UIApplication.didEnterBackgroundNotification)
-        .map { _ in }
+        .map { _ in })
     )
   }
 }

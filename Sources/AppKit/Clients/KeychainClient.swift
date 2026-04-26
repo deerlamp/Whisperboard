@@ -1,6 +1,6 @@
 import ComposableArchitecture
 import Foundation
-import KeychainAccess
+@preconcurrency import KeychainAccess
 
 // MARK: - KeychainClient
 

@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Dependencies
 import Foundation
 import IdentifiedCollections
@@ -42,10 +43,13 @@ enum SubscriptionClientError: Error, LocalizedError {
     switch self {
     case .noCurrentOffering:
       "No current offering available."
+
     case .noPackageInOffering:
       "No package in the current offering."
+
     case .cancelled:
       "The transaction was cancelled."
+
     case .noTransaction:
       "No transaction found."
     }

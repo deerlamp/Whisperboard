@@ -5,13 +5,13 @@ import Dependencies
 import Foundation
 import UIKit
 
-final class Storage {
+final class Storage: Sendable {
   static var containerGroupURL: URL? {
     let appGroupName = "group.whisperboard"
     return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)?.appending(component: "share")
   }
 
-  private var currentlyRecordingURL: URL?
+  private let currentlyRecordingURL = LockIsolated<URL?>(nil)
 
   init() {}
 
@@ -23,7 +23,7 @@ final class Storage {
   }
 
   func setAsCurrentlyRecording(_ url: URL?) {
-    currentlyRecordingURL = url
+    currentlyRecordingURL.setValue(url)
   }
 
   private func read(currentRecordings: [RecordingInfo]) async throws -> IdentifiedArrayOf<RecordingInfo> {
@@ -40,7 +40,7 @@ final class Storage {
       .contentsOfDirectory(atPath: Configs.recordingsDirectoryURL.path)
       .filter { $0.hasSuffix(".wav") }
       // Remove the currently recording file from the list until it is finished
-      .filter { $0 != currentlyRecordingURL?.lastPathComponent }
+      .filter { $0 != currentlyRecordingURL.value?.lastPathComponent }
 
     var recordings: IdentifiedArrayOf<RecordingInfo> = []
     for file in recordingFiles {
@@ -120,7 +120,6 @@ final class Storage {
     let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
     let date = attributes[.creationDate] as? Date ?? Date()
     let duration = try await getFileDuration(url: fileURL)
-    let recording = RecordingInfo(fileName: fileName, date: date, duration: duration)
-    return recording
+    return RecordingInfo(fileName: fileName, date: date, duration: duration)
   }
 }

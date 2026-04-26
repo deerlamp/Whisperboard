@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Dependencies
 import SwiftUI
 import XCTestDynamicOverlay
@@ -13,8 +14,9 @@ extension DependencyValues {
     typealias Value = @Sendable () async -> Void
 
     static let liveValue: @Sendable () async -> Void = {
+      guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
       await MainActor.run {
-        UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+        UIApplication.shared.open(url)
       }
     }
 

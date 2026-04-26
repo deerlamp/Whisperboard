@@ -1,5 +1,6 @@
-import AudioProcessing
+@preconcurrency import AudioProcessing
 import Common
+import ComposableArchitecture
 import Dependencies
 import Foundation
 
@@ -19,10 +20,9 @@ struct AudioPlayerClient {
 // MARK: DependencyKey
 
 extension AudioPlayerClient: DependencyKey {
-  class Context {
-    fileprivate var audioPlayer: AudioPlayer?
-
-    var continuation: AsyncStream<PlaybackState>.Continuation?
+  final class Context: Sendable {
+    fileprivate let audioPlayer = LockIsolated<AudioPlayer?>(nil)
+    let continuation = LockIsolated<AsyncStream<PlaybackState>.Continuation?>(nil)
 
     init() {}
   }
@@ -32,16 +32,16 @@ extension AudioPlayerClient: DependencyKey {
 
     return AudioPlayerClient(
       play: { url in
-        @Dependency(\.audioSession) var audioSession: AudioSessionClient
-        
-        if let audioPlayer = context.audioPlayer, audioPlayer.player.isPlaying {
+        @Dependency(AudioSessionClient.self) var audioSession: AudioSessionClient
+
+        if let audioPlayer = context.audioPlayer.value, audioPlayer.player.isPlaying {
           audioPlayer.player.stop()
-          context.continuation?.yield(.stop)
+          context.continuation.value?.yield(.stop)
         }
 
-        let stream = AsyncStream<PlaybackState> { continuation in
+        return AsyncStream<PlaybackState> { continuation in
           do {
-            context.continuation = continuation
+            context.continuation.setValue(continuation)
             let audioPlayer = try AudioPlayer(
               url: url,
               didFinishPlaying: { successful in
@@ -55,7 +55,7 @@ extension AudioPlayerClient: DependencyKey {
                 continuation.finish()
               }
             )
-            context.audioPlayer = audioPlayer
+            context.audioPlayer.setValue(audioPlayer)
 
             try audioSession.enable(.playback, true)
             audioPlayer.player.play()
@@ -80,15 +80,14 @@ extension AudioPlayerClient: DependencyKey {
               timerTask.cancel()
             }
           } catch {
-            context.audioPlayer?.player.stop()
+            context.audioPlayer.value?.player.stop()
             continuation.yield(.error(error.equatable))
             continuation.finish()
           }
         }
-        return stream
       },
       seekProgress: { progress in
-        if let player = context.audioPlayer?.player {
+        if let player = context.audioPlayer.value?.player {
           let time = player.duration * progress
           player.currentTime = time
 //          context.continuation?.yield(.playing(PlaybackPosition(
@@ -98,25 +97,25 @@ extension AudioPlayerClient: DependencyKey {
         }
       },
       pause: {
-        context.audioPlayer?.player.pause()
+        context.audioPlayer.value?.player.pause()
 //        context.continuation?.yield(.pause(PlaybackPosition(
 //          currentTime: context.audioPlayer?.player.currentTime ?? 0,
 //          duration: context.audioPlayer?.player.duration ?? 0
 //        )))
       },
       resume: {
-        context.audioPlayer?.player.play()
+        context.audioPlayer.value?.player.play()
 //        context.continuation?.yield(.playing(PlaybackPosition(
 //          currentTime: context.audioPlayer?.player.currentTime ?? 0,
 //          duration: context.audioPlayer?.player.duration ?? 0
 //        )))
       },
       stop: {
-        context.audioPlayer?.player.stop()
-        context.continuation?.yield(.stop)
+        context.audioPlayer.value?.player.stop()
+        context.continuation.value?.yield(.stop)
       },
       speed: { speed in
-        context.audioPlayer?.player.rate = speed
+        context.audioPlayer.value?.player.rate = speed
       }
     )
   }()

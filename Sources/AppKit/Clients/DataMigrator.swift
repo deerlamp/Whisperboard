@@ -1,20 +1,21 @@
 import Common
+import ComposableArchitecture
 import Dependencies
 import Foundation
 import WhisperKit
 
 // MARK: - Migration
 
-protocol Migration {
+protocol Migration: Sendable {
   var version: Int { get }
   func migrate() throws
 }
 
 // MARK: - DataMigrator
 
-class DataMigrator {
+final class DataMigrator: Sendable {
   private let migrations: [Migration]
-  private var migrationVersion: Int {
+  private nonisolated var migrationVersion: Int {
     get { UserDefaults.standard.integer(forKey: "migrationVersion") }
     set { UserDefaults.standard.set(newValue, forKey: "migrationVersion") }
   }
@@ -54,12 +55,16 @@ extension DataMigrator: DependencyKey {
       SettingsMigration(),
     ])
   }
+
+  static let testValue = DataMigrator(migrations: [])
 }
 
 // MARK: - RecordingInfoMigration
 
 struct RecordingInfoMigration: Migration {
-  var version: Int { 1 }
+  var version: Int {
+    1
+  }
 
   func migrate() throws {
     struct OldRecordingInfo: Codable {
@@ -69,7 +74,9 @@ struct RecordingInfoMigration: Migration {
       var duration: TimeInterval
       var text: String = ""
       var isTranscribed = false
-      var id: String { fileName }
+      var id: String {
+        fileName
+      }
     }
 
     let fileURL = try FileManager.default
@@ -114,7 +121,9 @@ struct RecordingInfoMigration: Migration {
 // MARK: - SettingsMigration
 
 struct SettingsMigration: Migration {
-  var version: Int { 2 }
+  var version: Int {
+    2
+  }
 
   func migrate() throws {
     struct VoiceLanguage: Codable, Hashable, Identifiable {

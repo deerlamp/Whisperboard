@@ -7,7 +7,9 @@ struct PlaybackPosition: Equatable {
   let currentTime: TimeInterval
   let duration: TimeInterval
 
-  var progress: Double { currentTime / duration }
+  var progress: Double {
+    currentTime / duration
+  }
 
   static func == (lhs: PlaybackPosition, rhs: PlaybackPosition) -> Bool {
     lhs.currentTime.rounded(toPlaces: 2) == rhs.currentTime.rounded(toPlaces: 2) &&

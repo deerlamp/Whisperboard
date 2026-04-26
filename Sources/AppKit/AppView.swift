@@ -1,4 +1,4 @@
-import BackgroundTasks
+@preconcurrency import BackgroundTasks
 import Common
 import ComposableArchitecture
 import Logging
@@ -34,7 +34,7 @@ public struct AppView: View {
 
     BGTaskScheduler.shared.register(forTaskWithIdentifier: TranscriptionWorker.backgroundTaskIdentifier, using: nil) { task in
       guard let task = task as? BGProcessingTask else { return }
-      Self.store.send(.registerForBGProcessingTasks(task))
+      Self.store.send(.registerForBGProcessingTasks(TranscriptionWorker.BGProcessingTaskWrapper(task: task)))
     }
   }
 
