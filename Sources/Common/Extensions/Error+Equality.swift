@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - EquatableError
 
-public struct EquatableError: Error, Equatable, Hashable {
+public struct EquatableError: Error, Equatable, Hashable, Sendable {
   private let _base: Error
   private let _message: String
 

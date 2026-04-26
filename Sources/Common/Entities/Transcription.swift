@@ -1,9 +1,8 @@
-import ComposableArchitecture
 import Foundation
 
 // MARK: - Transcription
 
-public struct Transcription: Codable, Hashable, Identifiable {
+public struct Transcription: Codable, Hashable, Identifiable, Sendable {
   public let id: UUID
   public var fileName: String
   public var startDate: Date = .init()
@@ -52,7 +51,7 @@ public struct Transcription: Codable, Hashable, Identifiable {
 // MARK: Transcription.Timings
 
 public extension Transcription {
-  struct Timings: Codable, Hashable {
+  struct Timings: Codable, Hashable, Sendable {
     public var tokensPerSecond: Double = 0
     public var fullPipeline: TimeInterval = 0
 
@@ -66,8 +65,7 @@ public extension Transcription {
 // MARK: Transcription.Status
 
 public extension Transcription {
-  @CasePathable
-  enum Status: Codable, Hashable {
+  enum Status: Codable, Hashable, Sendable {
     case notStarted
     case loading
     case uploading(Double)
@@ -81,8 +79,11 @@ public extension Transcription {
 
 // MARK: - Segment
 
-public struct Segment: Codable, Hashable, Identifiable {
-  public var id: Int64 { startTimeMS }
+public struct Segment: Codable, Hashable, Identifiable, Sendable {
+  public var id: Int64 {
+    startTimeMS
+  }
+
   public let startTimeMS: Int64
   public let endTimeMS: Int64
   public let text: String
@@ -109,7 +110,7 @@ public struct Segment: Codable, Hashable, Identifiable {
 
 // MARK: - Token
 
-public struct Token: Codable, Hashable, Identifiable {
+public struct Token: Codable, Hashable, Identifiable, Sendable {
   public let id: Int
   public let index: Int
   public let logProbability: Float
@@ -130,7 +131,7 @@ public struct Token: Codable, Hashable, Identifiable {
 
 // MARK: - WordData
 
-public struct WordData: Codable, Hashable {
+public struct WordData: Codable, Hashable, Sendable {
   public let word: String
   public let startTimeMS: Int64
   public let endTimeMS: Int64

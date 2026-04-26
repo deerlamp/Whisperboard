@@ -2,8 +2,10 @@ import Foundation
 
 // MARK: - RecordingInfo
 
-public struct RecordingInfo: Identifiable, Hashable, Then {
-  public var id: String { fileName }
+public struct RecordingInfo: Identifiable, Hashable, Sendable, Then {
+  public var id: String {
+    fileName
+  }
 
   public var fileName: String
   public var title: String
@@ -12,9 +14,17 @@ public struct RecordingInfo: Identifiable, Hashable, Then {
   public var editedText: String?
   public var transcription: Transcription?
 
-  public var text: String { /* editedText ?? */ transcription?.text ?? "" }
-  public var isTranscribed: Bool { transcription?.status.isDone == true }
-  public var isTranscribing: Bool { transcription?.status.isLoadingOrProgress == true }
+  public var text: String { // editedText ??
+    transcription?.text ?? ""
+  }
+
+  public var isTranscribed: Bool {
+    transcription?.status.isDone == true
+  }
+
+  public var isTranscribing: Bool {
+    transcription?.status.isLoadingOrProgress == true
+  }
 
   public init(
     fileName: String,
@@ -84,6 +94,7 @@ public extension RecordingInfo {
 
 #if DEBUG
 
+  // swiftlint:disable line_length
   public extension RecordingInfo {
     static let mock = RecordingInfo(
       fileName: "mock.wav",
@@ -184,4 +195,5 @@ public extension RecordingInfo {
       ),
     ]
   }
+  // swiftlint:enable line_length
 #endif

@@ -8,7 +8,7 @@ public enum AsyncError: Error {
 }
 
 public extension Publisher {
-  func asAsync() async throws -> Output {
+  func asAsync() async throws -> Output where Output: Sendable {
     try await withCheckedThrowingContinuation { continuation in
       var cancellable: UncheckedSendable<AnyCancellable>?
       var finishedWithoutValue = true
@@ -32,7 +32,7 @@ public extension Publisher {
     }
   }
 
-  func asAsyncThrowingStream() -> AsyncThrowingStream<Output, Failure> where Failure == Error {
+  func asAsyncThrowingStream() -> AsyncThrowingStream<Output, Failure> where Output: Sendable, Failure == Error {
     AsyncThrowingStream(Output.self) { continuation in
       let cancellable = UncheckedSendable(sink { completion in
         switch completion {
@@ -50,7 +50,7 @@ public extension Publisher {
     }
   }
 
-  func asAsyncStream() -> AsyncStream<Output> where Failure == Never {
+  func asAsyncStream() -> AsyncStream<Output> where Output: Sendable, Failure == Never {
     AsyncStream(Output.self) { continuation in
       let cancellable = UncheckedSendable(sink { completion in
         switch completion {

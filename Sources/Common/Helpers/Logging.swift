@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Foundation
 import Logging
 import os
@@ -18,9 +19,7 @@ public let logs: Logging.Logger = {
 // MARK: - ExtraLogHandler
 
 public enum ExtraLogHandler {
-  public static var isLoggingAllowed = true
-
-  public static var closure: ((
+  public typealias Closure = @Sendable (
     _ level: Logging.Logger.Level,
     _ message: Logging.Logger.Message,
     _ metadata: Logging.Logger.Metadata?,
@@ -28,12 +27,31 @@ public enum ExtraLogHandler {
     _ file: String,
     _ function: String,
     _ line: UInt
-  ) -> Void)?
+  ) -> Void
+
+  private static let loggingAllowed = LockIsolated(true)
+  private static let customClosure = LockIsolated<Closure?>(nil)
+
+  public static func isLoggingAllowed() -> Bool {
+    loggingAllowed.value
+  }
+
+  public static func closure() -> Closure? {
+    customClosure.value
+  }
+
+  public static func setLoggingAllowed(_ isAllowed: Bool) {
+    loggingAllowed.setValue(isAllowed)
+  }
+
+  public static func setClosure(_ closure: Closure?) {
+    customClosure.setValue(closure)
+  }
 }
 
 // MARK: - UnifiedLogHandler
 
-class UnifiedLogHandler: LogHandler {
+struct UnifiedLogHandler: LogHandler {
   var logLevel: Logging.Logger.Level = .trace
   var metadata = Logging.Logger.Metadata()
   private var prettyMetadata: String?
@@ -64,7 +82,7 @@ class UnifiedLogHandler: LogHandler {
     function: String,
     line: UInt
   ) {
-    guard ExtraLogHandler.isLoggingAllowed else { return }
+    guard ExtraLogHandler.isLoggingAllowed() else { return }
 
     let combinedMetadata = metadata.map { self.metadata.merging($0, uniquingKeysWith: { _, new in new }) } ?? self.metadata
     let formattedMessage = formatMessage(level: level, message: message, metadata: combinedMetadata, file: file, line: line)
@@ -76,7 +94,7 @@ class UnifiedLogHandler: LogHandler {
     osLogger.log(level: OSLogType.from(loggerLevel: level), "\(formattedMessage)")
 
     // Additional custom logging
-    ExtraLogHandler.closure?(level, message, metadata, source, file, function, line)
+    ExtraLogHandler.closure()?(level, message, metadata, source, file, function, line)
   }
 
   private func formatMessage(

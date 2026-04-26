@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Settings
 
-public struct Settings: Hashable {
+public struct Settings: Hashable, Sendable {
   public var useMockedClients: Bool
   public var selectedModelName: String
   public var parameters: TranscriptionParameters

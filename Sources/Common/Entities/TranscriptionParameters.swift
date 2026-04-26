@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - WhisperParameters
 
-public struct TranscriptionParameters: Hashable, Codable {
+public struct TranscriptionParameters: Hashable, Codable, Sendable {
   public var initialPrompt: String?
   public var language: String?
   public var offsetMilliseconds: Int

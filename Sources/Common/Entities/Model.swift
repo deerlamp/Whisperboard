@@ -2,8 +2,11 @@ import Foundation
 
 // MARK: - Model
 
-public struct Model: Identifiable, Hashable, Codable {
-  public var id: String { name }
+public struct Model: Identifiable, Hashable, Codable, Sendable {
+  public var id: String {
+    name
+  }
+
   public let name: String
   public let isLocal: Bool
   public let isDefault: Bool
