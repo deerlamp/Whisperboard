@@ -18,32 +18,40 @@ struct RootView: View {
   var body: some View {
     WithPerceptionTracking {
       NavigationStack(path: $store.scope(state: \.path, action: \.path)) {
-        RecordScreenView(store: store.scope(state: \.recordScreen, action: \.recordScreen))
-          .background {
-            FluidGradient(
-              blobs: [Color(hexString: "#000040"), Color(hexString: "#000030"), Color(hexString: "#000020")],
-              highlights: [Color(hexString: "#1D004D"), Color(hexString: "#300055"), Color(hexString: "#100020")],
-              speed: 0.2,
-              blur: 0.75
-            )
-            .ignoresSafeArea()
+        RecordScreenView(
+          store: store.scope(state: \.recordScreen, action: \.recordScreen)
+        )
+        .background {
+          FluidGradient(
+            blobs: [Color(hexString: "#000040"), Color(hexString: "#000030"), Color(hexString: "#000020")],
+            highlights: [Color(hexString: "#1D004D"), Color(hexString: "#300055"), Color(hexString: "#100020")],
+            speed: 0.2,
+            blur: 0.75
+          )
+          .ignoresSafeArea()
+        }
+        .background(Color.DS.Background.primary)
+        .toolbar {
+          ToolbarItem(placement: .bottomBar) {
+            bottomBar
           }
-          .background(Color.DS.Background.primary)
-          .toolbar {
-            ToolbarItem(placement: .bottomBar) {
-              bottomBar
-            }
-          }
+        }
       } destination: { store in
-        switch store.case {
-        case .list:
-          RecordingListScreenView(store: self.store.scope(state: \.recordingListScreen, action: \.recordingListScreen))
+        WithPerceptionTracking {
+          switch store.case {
+          case .list:
+            RecordingListScreenView(
+              store: self.store.scope(state: \.recordingListScreen, action: \.recordingListScreen)
+            )
 
-        case .settings:
-          SettingsScreenView(store: self.store.scope(state: \.settingsScreen, action: \.settingsScreen))
+          case .settings:
+            SettingsScreenView(
+              store: self.store.scope(state: \.settingsScreen, action: \.settingsScreen)
+            )
 
-        case let .details(store):
-          RecordingDetailsView(store: store)
+          case let .details(store):
+            RecordingDetailsView(store: store)
+          }
         }
       }
 //      .navigationTransition(.slide.combined(with: .fade(.in)), interactivity: .pan)

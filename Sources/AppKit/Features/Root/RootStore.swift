@@ -1,23 +1,23 @@
-import BackgroundTasks
+@preconcurrency import BackgroundTasks
 import Combine
 import Common
 import ComposableArchitecture
-import DependenciesAdditions
 import SwiftUI
 
 // MARK: - Root
 
 @Reducer
-struct Root {
-  @Reducer(state: .equatable)
-  public enum Path {
+struct Root: Sendable {
+  @Reducer
+  @CasePathable
+  enum Path {
     case list
     case settings
     case details(RecordingDetails)
   }
 
   @ObservableState
-  struct State {
+  struct State: Sendable {
     var transcriptionWorker = TranscriptionWorker.State()
     var recordingListScreen = RecordingListScreen.State()
     var recordScreen = RecordScreen.State()
@@ -27,12 +27,21 @@ struct Root {
 
     @Presents var alert: AlertState<Action.Alert>?
 
-    var isRecording: Bool { recordScreen.recordingControls.recording != nil }
-    var isTranscribing: Bool { transcriptionWorker.isProcessing }
-    var shouldDisableIdleTimer: Bool { isRecording || isTranscribing }
+    var isRecording: Bool {
+      recordScreen.recordingControls.recording != nil
+    }
+
+    var isTranscribing: Bool {
+      transcriptionWorker.isProcessing
+    }
+
+    var shouldDisableIdleTimer: Bool {
+      isRecording || isTranscribing
+    }
   }
 
-  enum Action: BindableAction {
+  @CasePathable
+  enum Action: BindableAction, Sendable {
     case task
     case binding(BindingAction<State>)
     case transcriptionWorker(TranscriptionWorker.Action)
@@ -42,7 +51,7 @@ struct Root {
     case path(StackActionOf<Path>)
     case alert(PresentationAction<Alert>)
     case didCompleteICloudSync(TaskResult<Void>)
-    case registerForBGProcessingTasks(BGProcessingTask)
+    case registerForBGProcessingTasks(TranscriptionWorker.BGProcessingTaskWrapper)
     case goToNewRecordingButtonTapped
     case recordingListButtonTapped
     case settingsButtonTapped
@@ -58,14 +67,14 @@ struct Root {
   var body: some Reducer<State, Action> {
     BindingReducer()
       .onChange(of: \.shouldDisableIdleTimer) { _, shouldDisableIdleTimer in
-        Reduce { _, _ in
+        Reduce<State, Action> { _, _ in
           .run { _ in
             await MainActor.run { application.isIdleTimerDisabled = shouldDisableIdleTimer }
           }
         }
       }
       .onChange(of: \.recordScreen.recordingControls.recording?.recordingInfo.fileURL) { _, url in
-        Reduce { _, _ in
+        Reduce<State, Action> { _, _ in
           storage.setCurrentRecordingURL(url: url)
           return .none
         }
@@ -87,15 +96,19 @@ struct Root {
       SettingsScreen()
     }
 
-    Reduce { state, action in
+    Reduce<State, Action> { state, action in
       switch action {
       case .task:
         // Pausing unfinished transcription on app launch
         for recording in state.recordingListScreen.recordings {
           if let transcription = recording.transcription, transcription.status.isLoadingOrProgress {
             logs.debug("Marking \(recording.fileName) transcription as failed")
-            state.recordingListScreen.recordings[id: recording.id]?.transcription?.status = .error(message: "Transcription failed, please try again.")
-            state.transcriptionWorker.taskQueue[id: transcription.id] = nil
+            state.recordingListScreen.$recordings.withLock {
+              $0[id: recording.id]?.transcription?.status = .error(message: "Transcription failed, please try again.")
+            }
+            state.transcriptionWorker.$taskQueue.withLock {
+              $0[id: transcription.id] = nil
+            }
           }
         }
 
@@ -104,7 +117,7 @@ struct Root {
         }
 
       case .recordingListScreen(.didFinishImportingFiles),
-           .settingsScreen(.binding(.set(\.settings.isICloudSyncEnabled, true))):
+           .settingsScreen(.setICloudSyncEnabled(true)):
         return .run { send in
           await send(.didCompleteICloudSync(TaskResult { try await uploadNewRecordingsToICloudIfNeeded() }))
         }
@@ -115,7 +128,9 @@ struct Root {
 
       // Inserts a new recording into the recording list and enqueues a transcription task if auto-transcription is enabled
       case let .recordScreen(.delegate(.newRecordingCreated(recordingInfo))):
-        state.recordingListScreen.recordings.insert(recordingInfo, at: 0)
+        _ = state.recordingListScreen.$recordings.withLock {
+          $0.insert(recordingInfo, at: 0)
+        }
         state.isGoToNewRecordingPopupPresented = true
 
         return .run { send in
@@ -124,7 +139,9 @@ struct Root {
 
       case .path(.element(_, .details(.delegate(.deleteDialogConfirmed)))):
         guard let id = state.path.last?.details?.recordingCard.id else { return .none }
-        state.recordingListScreen.recordings.removeAll(where: { $0.id == id })
+        state.recordingListScreen.$recordings.withLock {
+          $0.removeAll(where: { $0.id == id })
+        }
         state.path.removeLast()
         return .none
 
@@ -138,15 +155,19 @@ struct Root {
       case let .didCompleteICloudSync(.failure(error)):
         logs.error("Failed to sync with iCloud: \(error)")
         state.alert = .init(
-          title: .init("Failed to sync with iCloud"),
-          message: .init(error.localizedDescription),
-          dismissButton: .default(.init("OK"))
+          title: { .init("Failed to sync with iCloud") },
+          actions: {
+            ButtonState {
+              .init("OK")
+            }
+          },
+          message: { .init(error.localizedDescription) }
         )
         return .none
 
-      case let .registerForBGProcessingTasks(task):
+      case let .registerForBGProcessingTasks(wrapper):
         return .run { send in
-          await send(.transcriptionWorker(.handleBGProcessingTask(task)))
+          await send(.transcriptionWorker(.handleBGProcessingTask(wrapper)))
         }
 
       case let .path(.element(_, .details(.recordingCard(.delegate(.enqueueTaskForRecordingID(recordingID)))))),
@@ -201,3 +222,11 @@ struct Root {
     }
   }
 }
+
+// MARK: - Root.Path.State + Equatable, Sendable
+
+extension Root.Path.State: Equatable, Sendable {}
+
+// MARK: - Root.Path.Action + Sendable
+
+extension Root.Path.Action: Sendable {}
