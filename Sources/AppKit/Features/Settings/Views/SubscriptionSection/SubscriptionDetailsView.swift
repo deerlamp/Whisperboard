@@ -1,3 +1,4 @@
+import CasePaths
 import Common
 import ComposableArchitecture
 import Inject
@@ -6,17 +7,18 @@ import SwiftUI
 // MARK: - SubscriptionDetails
 
 @Reducer
-struct SubscriptionDetails {
+struct SubscriptionDetails: Sendable {
   @ObservableState
-  struct State: Equatable {
-    var purchaseProgress: ProgressiveResultOf<Bool> = .none
-    var restoreProgress: ProgressiveResultOf<Bool> = .none
-    var availablePackage: ProgressiveResultOf<SubscriptionPackage> = .none
+  struct State: Equatable, Sendable {
+    var purchaseProgress: ProgressiveResultOf<Bool> = .idle
+    var restoreProgress: ProgressiveResultOf<Bool> = .idle
+    var availablePackage: ProgressiveResultOf<SubscriptionPackage> = .idle
 
     @Presents var alert: AlertState<Action.Alert>?
   }
 
-  enum Action: Equatable {
+  @CasePathable
+  enum Action: Equatable, Sendable {
     case onTask
 
     case availablePackagesDidLoad(TaskResult<IdentifiedArrayOf<SubscriptionPackage>>)
@@ -41,7 +43,7 @@ struct SubscriptionDetails {
   @Dependency(\.dismiss) var dismiss
 
   var body: some Reducer<State, Action> {
-    Reduce { state, action in
+    Reduce<State, Action> { state, action in
       switch action {
       case .onTask:
         state.availablePackage = .inProgress
@@ -85,7 +87,7 @@ struct SubscriptionDetails {
         withAnimation {
           switch error {
           case SubscriptionClientError.cancelled:
-            state.purchaseProgress = .none
+            state.purchaseProgress = .idle
 
           default:
             state.purchaseProgress = .failure(error)
@@ -118,9 +120,13 @@ struct SubscriptionDetails {
         }
         if !isSubscribed {
           state.alert = .init(
-            title: .init("No Purchases Found"),
-            message: .init("We couldn't find any purchases associated with your account."),
-            dismissButton: .default(.init("OK"))
+            title: { .init("No Purchases Found") },
+            actions: {
+              ButtonState {
+                .init("OK")
+              }
+            },
+            message: { .init("We couldn't find any purchases associated with your account.") }
           )
           return .none
         } else {
@@ -150,6 +156,7 @@ struct SubscriptionDetails {
 
 // MARK: - SubscriptionDetailsView
 
+@MainActor
 struct SubscriptionDetailsView: View {
   @Environment(\.dismiss) var dismiss
 
@@ -158,145 +165,185 @@ struct SubscriptionDetailsView: View {
   var body: some View {
     WithPerceptionTracking {
       VStack(spacing: .grid(4)) {
-        WhisperBoardKitAsset.subscriptionHeader.swiftUIImage
-          .resizable()
-          .scaledToFit()
-          .shining(
-            animation: .easeInOut(duration: 3).delay(7).repeatForever(autoreverses: false),
-            gradient: .init(colors: [.black.opacity(0.5), .black, .black.opacity(0.5)])
-          )
-
-        HStack(spacing: .grid(1)) {
-          Text("WhisperBoard")
-            .font(WhisperBoardKitFontFamily.Poppins.medium.swiftUIFont(size: 28))
-
-          Text("PRO")
-            .font(WhisperBoardKitFontFamily.Poppins.bold.swiftUIFont(size: 14))
-            .padding(.horizontal, 3)
-            .padding(.vertical, 1)
-            .background {
-              RoundedRectangle(cornerRadius: .grid(1))
-                .fill(Color.DS.Text.accent)
-            }
-        }
-        .accessibilityElement(children: .combine)
-
-        VStack(spacing: .grid(4)) {
-          FeatureView(
-            icon: "doc.text.below.ecg",
-            title: "Fast Cloud Transcription",
-            description: "Using large v2 whisper model."
-          )
-          FeatureView(
-            icon: "ellipsis.message",
-            title: "AI text processing",
-            description: "Edit transcription using AI."
-          )
-          FeatureView(
-            icon: "star.circle.fill",
-            title: "More Pro Features",
-            description: "All future pro features."
-          )
-          FeatureView(
-            icon: "bolt.heart",
-            title: "Support Development",
-            description: "Help build the future of WhisperBoard."
-          )
-        }
-        .padding(.top, .grid(4))
+        subscriptionHeader
+        subscriptionTitle
+        featuresList
 
         Spacer()
 
-        VStack(spacing: .grid(4)) {
-          switch store.availablePackage {
-          case .inProgress, .none:
-            ProgressView()
-              .progressViewStyle(.circular)
-              .padding(.vertical, .grid(4))
-
-          case .error:
-            Text("Error loading packages")
-              .textStyle(.error)
-              .padding(.vertical, .grid(4))
-
-          case let .success(package):
-            if store.purchaseProgress.isInProgress || store.restoreProgress.isInProgress {
-              ProgressView()
-                .progressViewStyle(.circular)
-                .padding(.vertical, .grid(8))
-            } else if store.purchaseProgress.isNone || store.purchaseProgress.isError {
-              Text("3 days free, then ")
-                .font(.DS.body)
-                .foregroundColor(.DS.Text.base)
-                +
-                Text(package.localizedPriceString)
-                .font(.DS.bodyBold)
-                .foregroundColor(.DS.Text.base)
-                +
-                Text("/month.")
-                .font(.DS.body)
-                .foregroundColor(.DS.Text.base)
-
-              Button {
-                store.send(.purchasePackage(id: package.id))
-              } label: {
-                Text("Try It Free")
-                  .font(WhisperBoardKitFontFamily.Poppins.semiBold.swiftUIFont(size: 24))
-                  .foregroundColor(.DS.Text.base)
-                  .frame(maxWidth: .infinity)
-              }
-              .primaryButtonStyle()
-              .transition(.scale)
-            }
-          }
-
-          if store.restoreProgress.isNone || store.restoreProgress.isError {
-            Button { store.send(.restorePurchasesTapped) } label: {
-              Text("Restore Purchases")
-                .foregroundColor(.DS.Text.accent)
-                .font(.DS.body)
-            }
-          }
-        }
-
-        HStack {
-          Button(action: { store.send(.privacyPolicyTapped) }) {
-            Text("Privacy Policy")
-              .foregroundColor(.DS.Text.subdued)
-              .textStyle(.captionBase)
-          }
-
-          Text("•")
-            .foregroundColor(.DS.Text.subdued)
-            .textStyle(.captionBase)
-
-          Button(action: { store.send(.termsOfUseTapped) }) {
-            Text("Terms of Use")
-              .foregroundColor(.DS.Text.subdued)
-              .textStyle(.captionBase)
-          }
-        }
+        purchaseSection
+        footerLinks
       }
       .padding(.grid(4))
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(Color.DS.Background.primary)
       .overlay(alignment: .topTrailing) {
-        Button { dismiss() } label: {
-          Image(systemName: "x.circle.fill")
-            .symbolRenderingMode(.hierarchical)
-            .font(.system(size: 30))
-            .foregroundColor(.DS.Text.base)
-            .padding(.grid(4))
-        }
+        closeButton
       }
       .alert($store.scope(state: \.alert, action: \.alert))
       .task { store.send(.onTask) }
+    }
+  }
+
+  private var subscriptionHeader: some View {
+    WhisperBoardKitAsset.subscriptionHeader.swiftUIImage
+      .resizable()
+      .scaledToFit()
+      .shining(
+        animation: .easeInOut(duration: 3).delay(7).repeatForever(autoreverses: false),
+        gradient: .init(colors: [.black.opacity(0.5), .black, .black.opacity(0.5)])
+      )
+  }
+
+  private var subscriptionTitle: some View {
+    HStack(spacing: .grid(1)) {
+      Text("WhisperBoard")
+        .font(WhisperBoardKitFontFamily.Poppins.medium.swiftUIFont(size: 28))
+
+      Text("PRO")
+        .font(WhisperBoardKitFontFamily.Poppins.bold.swiftUIFont(size: 14))
+        .padding(.horizontal, 3)
+        .padding(.vertical, 1)
+        .background {
+          RoundedRectangle(cornerRadius: .grid(1))
+            .fill(Color.DS.Text.accent)
+        }
+    }
+    .accessibilityElement(children: .combine)
+  }
+
+  private var featuresList: some View {
+    VStack(spacing: .grid(4)) {
+      FeatureView(
+        icon: "doc.text.below.ecg",
+        title: "Fast Cloud Transcription",
+        description: "Using large v2 whisper model."
+      )
+      FeatureView(
+        icon: "ellipsis.message",
+        title: "AI text processing",
+        description: "Edit transcription using AI."
+      )
+      FeatureView(
+        icon: "star.circle.fill",
+        title: "More Pro Features",
+        description: "All future pro features."
+      )
+      FeatureView(
+        icon: "bolt.heart",
+        title: "Support Development",
+        description: "Help build the future of WhisperBoard."
+      )
+    }
+    .padding(.top, .grid(4))
+  }
+
+  private var purchaseSection: some View {
+    VStack(spacing: .grid(4)) {
+      packageStateView
+      restorePurchasesButton
+    }
+  }
+
+  @ViewBuilder
+  private var packageStateView: some View {
+    switch store.availablePackage {
+    case .idle, .inProgress:
+      ProgressView()
+        .progressViewStyle(.circular)
+        .padding(.vertical, .grid(4))
+
+    case .error:
+      Text("Error loading packages")
+        .textStyle(.error)
+        .padding(.vertical, .grid(4))
+
+    case let .success(package):
+      loadedPackageView(package)
+    }
+  }
+
+  @ViewBuilder
+  private func loadedPackageView(_ package: SubscriptionPackage) -> some View {
+    if store.purchaseProgress.isInProgress || store.restoreProgress.isInProgress {
+      ProgressView()
+        .progressViewStyle(.circular)
+        .padding(.vertical, .grid(8))
+    } else if store.purchaseProgress.isNone || store.purchaseProgress.isError {
+      packagePriceText(package)
+
+      Button {
+        store.send(.purchasePackage(id: package.id))
+      } label: {
+        Text("Try It Free")
+          .font(WhisperBoardKitFontFamily.Poppins.semiBold.swiftUIFont(size: 24))
+          .foregroundColor(.DS.Text.base)
+          .frame(maxWidth: .infinity)
+      }
+      .primaryButtonStyle()
+      .transition(.scale)
+    }
+  }
+
+  private func packagePriceText(_ package: SubscriptionPackage) -> Text {
+    Text("3 days free, then ")
+      .font(.DS.body)
+      .foregroundColor(.DS.Text.base)
+      +
+      Text(package.localizedPriceString)
+      .font(.DS.bodyBold)
+      .foregroundColor(.DS.Text.base)
+      +
+      Text("/month.")
+      .font(.DS.body)
+      .foregroundColor(.DS.Text.base)
+  }
+
+  @ViewBuilder
+  private var restorePurchasesButton: some View {
+    if store.restoreProgress.isNone || store.restoreProgress.isError {
+      Button { store.send(.restorePurchasesTapped) } label: {
+        Text("Restore Purchases")
+          .foregroundColor(.DS.Text.accent)
+          .font(.DS.body)
+      }
+    }
+  }
+
+  private var footerLinks: some View {
+    HStack {
+      Button(action: { store.send(.privacyPolicyTapped) }) {
+        Text("Privacy Policy")
+          .foregroundColor(.DS.Text.subdued)
+          .textStyle(.captionBase)
+      }
+
+      Text("•")
+        .foregroundColor(.DS.Text.subdued)
+        .textStyle(.captionBase)
+
+      Button(action: { store.send(.termsOfUseTapped) }) {
+        Text("Terms of Use")
+          .foregroundColor(.DS.Text.subdued)
+          .textStyle(.captionBase)
+      }
+    }
+  }
+
+  private var closeButton: some View {
+    Button { dismiss() } label: {
+      Image(systemName: "x.circle.fill")
+        .symbolRenderingMode(.hierarchical)
+        .font(.system(size: 30))
+        .foregroundColor(.DS.Text.base)
+        .padding(.grid(4))
     }
   }
 }
 
 // MARK: - FeatureView
 
+@MainActor
 struct FeatureView: View {
   let icon: String
   let title: String

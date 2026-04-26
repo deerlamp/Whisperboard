@@ -3,8 +3,8 @@ import Foundation
 
 // MARK: - ProgressiveResult
 
-public enum ProgressiveResult<Value, Progress> {
-  case none
+public enum ProgressiveResult<Value: Sendable, Progress: Sendable>: Sendable {
+  case idle
   case inProgress(Progress)
   case success(Value)
   case error(EquatableError)
@@ -43,10 +43,10 @@ public extension ProgressiveResult where Value: Equatable {
   static func == (lhs: Self, rhs: Value) -> Bool where Progress == Void {
     switch (lhs, rhs) {
     case let (.success(lhsValue), rhsValue):
-      return lhsValue == rhsValue
+      lhsValue == rhsValue
 
     default:
-      return false
+      false
     }
   }
 }
@@ -61,16 +61,16 @@ extension ProgressiveResult: Equatable where Value: Equatable {
   public static func == (lhs: Self, rhs: Self) -> Bool where Progress: Equatable {
     switch (lhs, rhs) {
     case let (.inProgress(lhsValue), .inProgress(rhsValue)):
-      return lhsValue == rhsValue
+      lhsValue == rhsValue
 
     default:
-      return isEqual(lhs: lhs, rhs: rhs)
+      isEqual(lhs: lhs, rhs: rhs)
     }
   }
 
   private static func isEqual(lhs: ProgressiveResult<Value, Progress>, rhs: ProgressiveResult<Value, Progress>) -> Bool {
     switch (lhs, rhs) {
-    case (.none, .none):
+    case (.idle, .idle):
       true
 
     case (.inProgress, .inProgress):
@@ -108,7 +108,7 @@ extension ProgressiveResult: Hashable where Value: Hashable {
 
   private func calculateHash(hasher: inout Hasher) {
     switch self {
-    case .none:
+    case .idle:
       hasher.combine(0)
 
     case .inProgress:
@@ -125,11 +125,11 @@ extension ProgressiveResult: Hashable where Value: Hashable {
   }
 }
 
-public typealias ProgressiveResultOf<Value> = ProgressiveResult<Value, Void>
+public typealias ProgressiveResultOf<Value: Sendable> = ProgressiveResult<Value, Void>
 
 public extension ProgressiveResult {
   var isNone: Bool {
-    guard case .none = self else { return false }
+    guard case .idle = self else { return false }
     return true
   }
 
@@ -154,7 +154,7 @@ public extension ProgressiveResult {
 }
 
 public extension TaskResult {
-  func toProgressiveResult<Progress>() -> ProgressiveResult<Success, Progress> {
+  func toProgressiveResult<Progress: Sendable>() -> ProgressiveResult<Success, Progress> {
     switch self {
     case let .success(value):
       .success(value)
